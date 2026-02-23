@@ -3,8 +3,8 @@ import { NextResponse } from 'next/server';
 
 // Admin client getter — server side only
 function getSupabaseAdmin() {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zuzywkrkboumsvebnkzz.supabase.co';
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1enl3a3JrYm91bXN2ZWJua3p6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTY4NjY5MywiZXhwIjoyMDg3MjYyNjkzfQ._5vza7YcJHTxsXuw6loatsE42tQLrXMNjyOY_X_SRw4';
 
     if (!url || !key) {
         throw new Error('Supabase URL or Service Role Key is missing');
