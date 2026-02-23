@@ -1,3 +1,0 @@
-﻿{"ok":true,"result":[{"update_id":931150445,
-"message":{"message_id":1,"from":{"id":1195933384,"is_bot":false,"first_name":"Prathamesh","last_name":"Kolte","username":"PRATHAMESH7654","language_code":"en"},"chat":{"id":1195933384,"first_name":"Prathamesh","last_name":"Kolte","username":"PRATHAMESH7654","type":"private"},"date":1771873846,"text":"/start","entities":[{"offset":0,"length":6,"type":"bot_command"}]}},{"update_id":931150446,
-"message":{"message_id":2,"from":{"id":1195933384,"is_bot":false,"first_name":"Prathamesh","last_name":"Kolte","username":"PRATHAMESH7654","language_code":"en"},"chat":{"id":1195933384,"first_name":"Prathamesh","last_name":"Kolte","username":"PRATHAMESH7654","type":"private"},"date":1771873849,"text":"Hi"}}]}
