@@ -1,0 +1,8 @@
+﻿
+ name                               value               environments        created    
+ TELEGRAM_CHAT_ID                   Encrypted           Production          5m ago     
+ TELEGRAM_BOT_TOKEN                 Encrypted           Production          6m ago     
+ SUPABASE_SERVICE_ROLE_KEY          Encrypted           Production          12h ago    
+ NEXT_PUBLIC_SUPABASE_ANON_KEY      Encrypted           Production          13h ago    
+ NEXT_PUBLIC_SUPABASE_URL           Encrypted           Production          13h ago    
+
