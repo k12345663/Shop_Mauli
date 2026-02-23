@@ -9,12 +9,10 @@
 /build
 
 # env files
-.env*.local
-
-# misc
-.DS_Store
-*.pem
+.env*
 
 # debug
 npm-debug.log*
 .vercel
+*.txt
+*.log
