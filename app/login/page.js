@@ -66,12 +66,6 @@ export default function LoginPage() {
 
                 {error && <div className="auth-error">{error}</div>}
 
-                {/* Debug info - temporary */}
-                {process.env.NODE_ENV === 'production' && (
-                    <div style={{ fontSize: '10px', color: '#666', marginBottom: '10px', textAlign: 'center' }}>
-                        Connected to: {process.env.NEXT_PUBLIC_SUPABASE_URL?.split('.')[0] || 'Unknown'}...
-                    </div>
-                )}
 
                 <form onSubmit={handleLogin}>
                     <div className="form-group">
