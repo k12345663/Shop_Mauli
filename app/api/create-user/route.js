@@ -1,11 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
-// Admin client using service role — server side only
-const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+// Admin client getter — server side only
+function getSupabaseAdmin() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!url || !key) {
+        throw new Error('Supabase URL or Service Role Key is missing');
+    }
+
+    return createClient(url, key);
+}
 
 export async function POST(request) {
     try {
@@ -15,6 +21,7 @@ export async function POST(request) {
             return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
         }
 
+        const supabaseAdmin = getSupabaseAdmin();
         // Create user in Supabase Auth using admin API
         const { data, error: createError } = await supabaseAdmin.auth.admin.createUser({
             email,
@@ -44,6 +51,7 @@ export async function POST(request) {
 export async function DELETE(request) {
     try {
         const { userId } = await request.json();
+        const supabaseAdmin = getSupabaseAdmin();
         const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
         if (error) return NextResponse.json({ error: error.message }, { status: 400 });
         return NextResponse.json({ success: true });
