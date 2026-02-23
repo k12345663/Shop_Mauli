@@ -13,16 +13,26 @@ export async function POST(request) {
             timeZone: 'Asia/Kolkata',
         });
 
+        const remaining = expected - received;
         const statusEmoji = status === 'paid' ? '✅' : status === 'partial' ? '⚠️' : '❌';
 
-        const message =
-            `<b>🏢 Rent Update</b>\n` +
-            `<b>Renter:</b> ${renterCode} (${renterName})\n` +
-            `<b>Shops:</b> ${shops}\n` +
-            `<b>Month:</b> ${month}\n` +
-            `<b>Status:</b> ${statusEmoji} ${status.toUpperCase()}\n` +
-            `<b>Amount:</b> ₹${received} / ₹${expected}\n` +
-            `<b>Time:</b> ${time}`;
+        let message = `<b>🏢 Rent Notification</b>\n\n`;
+        message += `<b>Renter:</b> ${renterName} (Code: ${renterCode})\n`;
+        message += `<b>Month:</b> ${month}\n`;
+
+        if (status === 'paid') {
+            message += `<b>Status:</b> ${statusEmoji} Payment <b>COMPLETE</b>\n`;
+            message += `<b>Amount Paid:</b> ₹${received}\n`;
+        } else if (status === 'partial') {
+            message += `<b>Status:</b> ${statusEmoji} <b>PARTIAL</b> Payment\n`;
+            message += `<b>Amount Paid:</b> ₹${received}\n`;
+            message += `<b>Remaining:</b> ₹${remaining}\n`;
+        } else {
+            message += `<b>Status:</b> ${statusEmoji} <b>UNPAID</b>\n`;
+            message += `<b>Expected:</b> ₹${expected}\n`;
+        }
+
+        message += `\n<b>Time:</b> ${time}`;
 
         const result = await sendTelegramMessage(message);
 
