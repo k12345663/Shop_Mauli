@@ -39,7 +39,7 @@ function CollectContent() {
         setLoading(true);
         const { data } = await supabase
             .from('renters')
-            .select('*, renter_shops(shop_id, shops(shop_no, complex, rent_amount, rent_collection_day))')
+            .select('*, renter_shops(shop_id, shops(shop_no, complex_id, complexes(name), rent_amount, rent_collection_day))')
             .eq('id', renterId)
             .single();
 
@@ -167,7 +167,7 @@ function CollectContent() {
                 <div className="shops-list">
                     {shops.map((sh, i) => (
                         <span key={i} className="shop-tag">
-                            {sh.complex} - {sh.shop_no} — ₹{Number(sh.rent_amount).toLocaleString()} (Due Day: {sh.rent_collection_day || 1})
+                            {sh.complexes?.name || '—'} - {sh.shop_no} — ₹{Number(sh.rent_amount).toLocaleString()} (Due Day: {sh.rent_collection_day || 1})
                         </span>
                     ))}
                 </div>

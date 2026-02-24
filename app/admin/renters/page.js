@@ -19,7 +19,7 @@ export default function ManageRenters() {
         setLoading(true);
         const { data } = await supabase
             .from('renters')
-            .select('*, renter_shops(shop_id, shops(shop_no, complex, rent_amount))')
+            .select('*, renter_shops(shop_id, deposit_amount, shops(shop_no, complex_id, complexes(name), rent_amount))')
             .order('renter_code', { ascending: true });
         setRenters(data || []);
         setLoading(false);
@@ -67,6 +67,23 @@ export default function ManageRenters() {
             setToast({ message: error.message, type: 'error' });
         } else {
             setToast({ message: 'Rent amount updated', type: 'success' });
+            fetchRenters();
+        }
+        setLoading(false);
+    }
+
+    async function updateShopDeposit(renterId, shopId, amount) {
+        if (!amount || isNaN(amount)) return;
+        setLoading(true);
+        const { error } = await supabase
+            .from('renter_shops')
+            .update({ deposit_amount: parseFloat(amount) })
+            .match({ renter_id: renterId, shop_id: shopId });
+
+        if (error) {
+            setToast({ message: error.message, type: 'error' });
+        } else {
+            setToast({ message: 'Deposit amount updated', type: 'success' });
             fetchRenters();
         }
         setLoading(false);
@@ -138,8 +155,9 @@ export default function ManageRenters() {
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                                                 {renter.renter_shops?.length > 0 ? renter.renter_shops.map(rs => (
                                                     <div key={rs.shops?.shop_no} className="shop-tag" style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '6px 10px' }}>
-                                                        <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{rs.shops?.complex} - {rs.shops?.shop_no}</div>
-                                                        <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>₹{Number(rs.shops?.rent_amount).toLocaleString()}</div>
+                                                        <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{rs.shops?.complexes?.name || '—'} - {rs.shops?.shop_no}</div>
+                                                        <div style={{ fontSize: '0.75rem', opacity: 0.9 }}>Rent: ₹{Number(rs.shops?.rent_amount || 0).toLocaleString()}</div>
+                                                        <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Deposit: ₹{Number(rs.deposit_amount || 0).toLocaleString()}</div>
                                                     </div>
                                                 )) : <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>None</span>}
                                             </div>
@@ -208,17 +226,29 @@ export default function ManageRenters() {
                                             <div key={rs.shops?.shop_no} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-primary)', padding: '10px', borderRadius: 'var(--radius-md)' }}>
                                                 <div style={{ minWidth: '90px' }}>
                                                     <div style={{ fontWeight: 700 }}>{rs.shops?.shop_no}</div>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{rs.shops?.complex}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{rs.shops?.complexes?.name || '—'}</div>
                                                 </div>
-                                                <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <span style={{ color: 'var(--text-secondary)' }}>₹</span>
-                                                    <input
-                                                        type="number"
-                                                        className="form-input"
-                                                        style={{ padding: '4px 8px', fontSize: '0.9rem' }}
-                                                        defaultValue={rs.shops?.rent_amount}
-                                                        onBlur={(e) => updateShopRent(rs.shop_id, e.target.value)}
-                                                    />
+                                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', minWidth: '60px' }}>Rent: ₹</span>
+                                                        <input
+                                                            type="number"
+                                                            className="form-input"
+                                                            style={{ padding: '4px 8px', fontSize: '0.9rem' }}
+                                                            defaultValue={rs.shops?.rent_amount}
+                                                            onBlur={(e) => updateShopRent(rs.shop_id, e.target.value)}
+                                                        />
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', minWidth: '60px' }}>Deposit: ₹</span>
+                                                        <input
+                                                            type="number"
+                                                            className="form-input"
+                                                            style={{ padding: '4px 8px', fontSize: '0.9rem' }}
+                                                            defaultValue={rs.deposit_amount}
+                                                            onBlur={(e) => updateShopDeposit(editingRenter.id, rs.shop_id, e.target.value)}
+                                                        />
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}

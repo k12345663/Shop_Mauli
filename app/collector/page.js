@@ -18,7 +18,7 @@ export default function CollectorSearch() {
     async function fetchRenters() {
         const { data } = await supabase
             .from('renters')
-            .select('*, renter_shops(shop_id, shops(shop_no, complex, rent_amount, rent_collection_day))')
+            .select('*, renter_shops(shop_id, shops(shop_no, complex_id, complexes(name), rent_amount, rent_collection_day))')
             .order('renter_code');
         setRenters(data || []);
         setResults(data || []);
@@ -92,7 +92,7 @@ export default function CollectorSearch() {
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
                                             {shopList.map((sh, i) => (
                                                 <span key={i} className="shop-tag">
-                                                    {sh?.complex} - {sh?.shop_no} — ₹{Number(sh?.rent_amount || 0).toLocaleString()} (Due: {sh?.rent_collection_day || 1})
+                                                    {sh?.complexes?.name || '—'} - {sh?.shop_no} — ₹{Number(sh?.rent_amount || 0).toLocaleString()} (Due: {sh?.rent_collection_day || 1})
                                                 </span>
                                             ))}
                                             {shopList.length === 0 && (

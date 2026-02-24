@@ -12,8 +12,6 @@ const NAV_ITEMS = {
     { href: '/admin/renters', label: 'Manage Renters', icon: '👤' },
     { href: '/admin/assign', label: 'Assign Shops', icon: '🔗' },
     { href: '/admin/payments', label: 'Payments Report', icon: '💰' },
-    { href: '/admin/approvals', label: 'User Approvals', icon: '✅' },
-    { href: '/admin/users', label: 'Manage Users', icon: '👥' },
   ],
   collector: [
     { href: '/collector', label: 'Search Renter', icon: '🔍' },
@@ -24,8 +22,13 @@ const NAV_ITEMS = {
     { href: '/admin/shops', label: 'Manage Shops', icon: '🏪' },
     { href: '/admin/renters', label: 'Manage Renters', icon: '👤' },
     { href: '/admin/assign', label: 'Assign Shops', icon: '🔗' },
+    { href: '/admin/payments', label: 'Payments Report', icon: '💰' },
     { href: '/owner', label: 'Analytics', icon: '📈' },
-    { href: '/owner/users', label: 'Manage Users', icon: '👥' },
+  ],
+  dba: [
+    { href: '/admin', label: 'Dashboard', icon: '📊' },
+    { href: '/admin/approvals', label: 'User Approvals', icon: '✅' },
+    { href: '/admin/users', label: 'Manage Users', icon: '👥' },
   ],
 };
 

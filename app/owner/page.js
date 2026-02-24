@@ -9,9 +9,12 @@ export default function OwnerAnalytics() {
         totalRenters: 0,
         totalExpected: 0,
         totalReceived: 0,
+        totalPortfolioDeposit: 0,
+        totalPortfolioRent: 0,
         paidCount: 0,
         partialCount: 0,
         unpaidCount: 0,
+        complexStats: [] // [{ name: '', shops: 0, deposit: 0, rentPotential: 0 }]
     });
     const [payments, setPayments] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -34,18 +37,34 @@ export default function OwnerAnalytics() {
     async function fetchStats() {
         setLoading(true);
 
-        const [shopRes, renterRes, paymentRes] = await Promise.all([
+        const [shopRes, renterRes, paymentRes, complexRes] = await Promise.all([
             supabase.from('shops').select('id', { count: 'exact', head: true }).eq('is_active', true),
             supabase.from('renters').select('id', { count: 'exact', head: true }),
             supabase.from('rent_payments')
                 .select('*, renters(renter_code, name)')
                 .eq('period_month', currentMonth)
                 .order('collection_date', { ascending: false }),
+            supabase.from('complexes').select('id, name, shops(id, rent_amount, renter_shops(deposit_amount))')
         ]);
 
-        const fetchedPayments = paymentRes.data || [];
-        const totalExpected = fetchedPayments.reduce((s, p) => s + Number(p.expected_amount), 0);
-        const totalReceived = fetchedPayments.reduce((s, p) => s + Number(p.received_amount), 0);
+        // Calculate complex-wise stats accurately
+        const complexStats = (complexRes.data || []).map(comp => {
+            const shops = comp.shops || [];
+            const rentPotential = shops.reduce((s, shop) => s + Number(shop.rent_amount || 0), 0);
+            const totalDeposit = shops.reduce((s, shop) => {
+                const dep = shop.renter_shops?.reduce((ds, rs) => ds + Number(rs.deposit_amount || 0), 0) || 0;
+                return s + dep;
+            }, 0);
+            return {
+                name: comp.name,
+                shopCount: shops.length,
+                deposit: totalDeposit,
+                rentPotential
+            };
+        });
+
+        const totalPortfolioDeposit = complexStats.reduce((s, c) => s + c.deposit, 0);
+        const totalPortfolioRent = complexStats.reduce((s, c) => s + c.rentPotential, 0);
 
         setPayments(fetchedPayments);
         setStats({
@@ -53,6 +72,9 @@ export default function OwnerAnalytics() {
             totalRenters: renterRes.count || 0,
             totalExpected,
             totalReceived,
+            totalPortfolioDeposit,
+            totalPortfolioRent,
+            complexStats,
             paidCount: fetchedPayments.filter(p => p.status === 'paid').length,
             partialCount: fetchedPayments.filter(p => p.status === 'partial').length,
             unpaidCount: fetchedPayments.filter(p => p.status === 'unpaid').length,
@@ -139,26 +161,54 @@ export default function OwnerAnalytics() {
                 </div>
             ) : (
                 <>
-                    <div className="stats-grid">
-                        <div className="stat-card">
-                            <span className="stat-icon">🏪</span>
-                            <span className="stat-label">Total Shops</span>
-                            <span className="stat-value">{stats.totalShops}</span>
+                    <div style={{ marginBottom: '32px' }}>
+                        <h3 style={{ marginBottom: '16px', fontWeight: 700 }}>Portfolio Summary by Complex</h3>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+                            {stats.complexStats.map(comp => (
+                                <div key={comp.name} className="card" style={{ padding: '24px', borderLeft: '4px solid var(--accent-primary)' }}>
+                                    <div style={{ fontWeight: 800, fontSize: '1.25rem', marginBottom: '16px', color: 'var(--text-primary)' }}>{comp.name}</div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                        <div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>SHOPS</div>
+                                            <div style={{ fontWeight: 700, fontSize: '1.2rem' }}>{comp.shopCount}</div>
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>MONTHLY RENT</div>
+                                            <div style={{ fontWeight: 700, fontSize: '1.2rem', color: 'var(--status-paid)' }}>₹{comp.rentPotential.toLocaleString()}</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>TOTAL SECURITY DEPOSIT</div>
+                                        <div style={{ fontWeight: 700, fontSize: '1.2rem', color: 'var(--accent-primary)' }}>₹{comp.deposit.toLocaleString()}</div>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-                        <div className="stat-card">
-                            <span className="stat-icon">👤</span>
-                            <span className="stat-label">Total Renters</span>
-                            <span className="stat-value">{stats.totalRenters}</span>
-                        </div>
-                        <div className="stat-card">
-                            <span className="stat-icon">💰</span>
-                            <span className="stat-label">Expected Rent</span>
-                            <span className="stat-value">₹{stats.totalExpected.toLocaleString()}</span>
-                        </div>
-                        <div className="stat-card">
-                            <span className="stat-icon">✅</span>
-                            <span className="stat-label">Received</span>
-                            <span className="stat-value">₹{stats.totalReceived.toLocaleString()}</span>
+                    </div>
+
+                    <div style={{ marginBottom: '32px' }}>
+                        <h3 style={{ marginBottom: '16px', fontWeight: 700 }}>Current Collection Overview ({currentMonth})</h3>
+                        <div className="stats-grid">
+                            <div className="stat-card">
+                                <span className="stat-icon">💰</span>
+                                <span className="stat-label">Expected Total</span>
+                                <span className="stat-value">₹{stats.totalExpected.toLocaleString()}</span>
+                            </div>
+                            <div className="stat-card">
+                                <span className="stat-icon">✅</span>
+                                <span className="stat-label">Total Received</span>
+                                <span className="stat-value" style={{ color: 'var(--status-paid)' }}>₹{stats.totalReceived.toLocaleString()}</span>
+                            </div>
+                            <div className="stat-card">
+                                <span className="stat-icon">⏳</span>
+                                <span className="stat-label">Still Pending</span>
+                                <span className="stat-value" style={{ color: 'var(--status-unpaid)' }}>₹{pending.toLocaleString()}</span>
+                            </div>
+                            <div className="stat-card">
+                                <span className="stat-icon">📊</span>
+                                <span className="stat-label">Collection Rate</span>
+                                <span className="stat-value">{collectionRate}%</span>
+                            </div>
                         </div>
                     </div>
 

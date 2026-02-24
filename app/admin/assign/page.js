@@ -9,15 +9,18 @@ export default function AssignShops() {
     const [shops, setShops] = useState([]);
     const [selectedRenter, setSelectedRenter] = useState(null);
     const [assignedShopIds, setAssignedShopIds] = useState([]);
-    const [search, setSearch] = useState('');
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [toast, setToast] = useState(null);
+    const [shopDeposits, setShopDeposits] = useState({}); // { shopId: deposit }
+    const [complexes, setComplexes] = useState([]);
     const [selectedTab, setSelectedTab] = useState('All');
 
     useEffect(() => {
-        Promise.all([fetchRenters(), fetchShops()]).then(() => setLoading(false));
+        Promise.all([fetchRenters(), fetchShops(), fetchComplexes()]).then(() => setLoading(false));
     }, []);
+
+    async function fetchComplexes() {
+        const { data } = await supabase.from('complexes').select('*').order('name');
+        setComplexes(data || []);
+    }
 
     async function fetchRenters() {
         const { data } = await supabase.from('renters').select('*').order('renter_code');
@@ -25,7 +28,11 @@ export default function AssignShops() {
     }
 
     async function fetchShops() {
-        const { data } = await supabase.from('shops').select('id, shop_no, complex, rent_amount').eq('is_active', true).order('shop_no');
+        const { data } = await supabase
+            .from('shops')
+            .select('id, shop_no, complex_id, complexes(name), rent_amount')
+            .eq('is_active', true)
+            .order('shop_no');
         setShops(data || []);
     }
 
@@ -33,9 +40,17 @@ export default function AssignShops() {
         setSelectedRenter(renter);
         const { data } = await supabase
             .from('renter_shops')
-            .select('shop_id')
+            .select('shop_id, deposit_amount')
             .eq('renter_id', renter.id);
-        setAssignedShopIds((data || []).map(d => d.shop_id));
+
+        const ids = (data || []).map(d => d.shop_id);
+        const deposits = {};
+        (data || []).forEach(d => {
+            deposits[d.shop_id] = d.deposit_amount || 0;
+        });
+
+        setAssignedShopIds(ids);
+        setShopDeposits(deposits);
     }
 
     function toggleShop(shopId) {
@@ -58,6 +73,7 @@ export default function AssignShops() {
             const rows = assignedShopIds.map(shop_id => ({
                 renter_id: selectedRenter.id,
                 shop_id,
+                deposit_amount: parseFloat(shopDeposits[shop_id] || 0)
             }));
             const { error } = await supabase.from('renter_shops').insert(rows);
             if (error) {
@@ -144,7 +160,7 @@ export default function AssignShops() {
                             </div>
 
                             <div className="complex-tabs" style={{ display: 'flex', gap: '4px', marginBottom: '12px', overflowX: 'auto', paddingBottom: '4px' }}>
-                                {['All', 'Pump', 'New Complex', 'Tower'].map(tab => (
+                                {['All', ...complexes.map(c => c.name)].map(tab => (
                                     <button
                                         key={tab}
                                         type="button"
@@ -167,22 +183,40 @@ export default function AssignShops() {
 
                             <div className="checkbox-list" style={{ maxHeight: '300px', overflowY: 'auto' }}>
                                 {shops
-                                    .filter(s => selectedTab === 'All' || s.complex === selectedTab)
+                                    .filter(s => selectedTab === 'All' || s.complexes?.name === selectedTab)
                                     .map(shop => (
-                                        <label key={shop.id} className="checkbox-item">
-                                            <input
-                                                type="checkbox"
-                                                checked={assignedShopIds.includes(shop.id)}
-                                                onChange={() => toggleShop(shop.id)}
-                                            />
-                                            <div className="shop-info" style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
-                                                <div>
-                                                    <div className="shop-no" style={{ fontWeight: 600 }}>{shop.shop_no}</div>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{shop.complex}</div>
+                                        <div key={shop.id} className="checkbox-item" style={{ cursor: 'default', display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={assignedShopIds.includes(shop.id)}
+                                                    onChange={() => toggleShop(shop.id)}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                                <div className="shop-info" style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center', cursor: 'pointer' }} onClick={() => toggleShop(shop.id)}>
+                                                    <div>
+                                                        <div className="shop-no" style={{ fontWeight: 600 }}>{shop.shop_no}</div>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{shop.complexes?.name || '—'}</div>
+                                                    </div>
+                                                    <div className="shop-rent" style={{ color: 'var(--text-secondary)' }}>₹{Number(shop.rent_amount).toLocaleString()}</div>
                                                 </div>
-                                                <div className="shop-rent" style={{ color: 'var(--text-secondary)' }}>₹{Number(shop.rent_amount).toLocaleString()}</div>
                                             </div>
-                                        </label>
+
+                                            {assignedShopIds.includes(shop.id) && (
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: '26px', background: 'var(--bg-secondary)', padding: '6px 10px', borderRadius: 'var(--radius-sm)' }}>
+                                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>Deposit: ₹</span>
+                                                    <input
+                                                        type="number"
+                                                        className="form-input"
+                                                        style={{ padding: '4px 8px', height: '28px', fontSize: '0.85rem' }}
+                                                        placeholder="0.00"
+                                                        value={shopDeposits[shop.id] || ''}
+                                                        onChange={(e) => setShopDeposits(prev => ({ ...prev, [shop.id]: e.target.value }))}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
                                     ))}
                             </div>
 

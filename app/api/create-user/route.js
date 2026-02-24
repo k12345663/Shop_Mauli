@@ -52,8 +52,17 @@ export async function DELETE(request) {
     try {
         const { userId } = await request.json();
         const supabaseAdmin = getSupabaseAdmin();
-        const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
-        if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+        // 1. Delete from Auth
+        const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+        if (authError) return NextResponse.json({ error: authError.message }, { status: 400 });
+
+        // 2. Delete from Profiles (fallback, though ON DELETE CASCADE should handle it)
+        const { error: profileError } = await supabaseAdmin.from('profiles').delete().eq('id', userId);
+        if (profileError) {
+            console.error('Profile deletion error:', profileError.message);
+        }
+
         return NextResponse.json({ success: true });
     } catch (err) {
         return NextResponse.json({ error: err.message }, { status: 500 });

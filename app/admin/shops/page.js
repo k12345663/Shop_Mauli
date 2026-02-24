@@ -9,29 +9,42 @@ export default function ManageShops() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editingShop, setEditingShop] = useState(null);
-    const [form, setForm] = useState({ shop_no: '', category: 'Numeric', complex: 'New Complex', rent_amount: '', rent_collection_day: '1' });
-    const [toast, setToast] = useState(null);
-    const [search, setSearch] = useState('');
-    const [selectedTab, setSelectedTab] = useState('All');
+    const [complexes, setComplexes] = useState([]);
+    const [showComplexModal, setShowComplexModal] = useState(false);
+    const [editingComplex, setEditingComplex] = useState(null);
+    const [complexForm, setComplexForm] = useState({ name: '' });
 
-    useEffect(() => { fetchShops(); }, []);
+    useEffect(() => {
+        fetchShops();
+        fetchComplexes();
+    }, []);
+
+    async function fetchComplexes() {
+        const { data } = await supabase.from('complexes').select('*').order('name');
+        setComplexes(data || []);
+    }
 
     async function fetchShops() {
         setLoading(true);
         const { data } = await supabase
             .from('shops')
-            .select('*')
+            .select('*, complexes(id, name), renter_shops(renters(name))')
             .order('shop_no', { ascending: true });
         setShops(data || []);
         setLoading(false);
     }
+
+    const [form, setForm] = useState({ shop_no: '', category: 'Numeric', complex_id: '', rent_amount: '', rent_collection_day: '1' });
+    const [toast, setToast] = useState(null);
+    const [search, setSearch] = useState('');
+    const [selectedTab, setSelectedTab] = useState('All');
 
     function openAdd() {
         setEditingShop(null);
         setForm({
             shop_no: '',
             category: 'Numeric',
-            complex: selectedTab === 'All' ? 'New Complex' : selectedTab,
+            complex_id: complexes.find(c => c.name === selectedTab)?.id || '',
             rent_amount: '',
             rent_collection_day: '1'
         });
@@ -39,10 +52,11 @@ export default function ManageShops() {
     }
 
     function openEdit(shop) {
+        setEditingShop(shop);
         setForm({
             shop_no: shop.shop_no,
             category: shop.category || 'Numeric',
-            complex: shop.complex || 'New Complex',
+            complex_id: shop.complex_id || '',
             rent_amount: shop.rent_amount.toString(),
             rent_collection_day: (shop.rent_collection_day || 1).toString()
         });
@@ -51,10 +65,16 @@ export default function ManageShops() {
 
     async function handleSave(e) {
         e.preventDefault();
+
+        if (!form.complex_id) {
+            setToast({ message: 'Please select a complex', type: 'error' });
+            return;
+        }
+
         const payload = {
             shop_no: form.shop_no.trim(),
             category: form.category,
-            complex: form.complex,
+            complex_id: form.complex_id,
             rent_amount: parseFloat(form.rent_amount),
             rent_collection_day: parseInt(form.rent_collection_day),
         };
@@ -71,6 +91,39 @@ export default function ManageShops() {
 
         setShowModal(false);
         fetchShops();
+    }
+
+    async function handleSaveComplex(e) {
+        e.preventDefault();
+        const payload = { name: complexForm.name.trim() };
+
+        if (editingComplex) {
+            const { error } = await supabase.from('complexes').update(payload).eq('id', editingComplex.id);
+            if (error) { setToast({ message: error.message, type: 'error' }); return; }
+            setToast({ message: 'Complex updated', type: 'success' });
+        } else {
+            const { error } = await supabase.from('complexes').insert(payload);
+            if (error) { setToast({ message: error.message, type: 'error' }); return; }
+            setToast({ message: 'Complex added', type: 'success' });
+        }
+
+        setShowComplexModal(false);
+        fetchComplexes();
+        fetchShops();
+    }
+
+    async function deleteComplex(id) {
+        // Check if shops exist
+        const { data: linkedShops } = await supabase.from('shops').select('id').eq('complex_id', id);
+        if (linkedShops && linkedShops.length > 0) {
+            alert('Cannot delete complex: It contains shops. Please move or delete shops first.');
+            return;
+        }
+        if (!confirm('Delete this complex?')) return;
+        const { error } = await supabase.from('complexes').delete().eq('id', id);
+        if (error) { setToast({ message: error.message, type: 'error' }); return; }
+        setToast({ message: 'Complex deleted', type: 'success' });
+        fetchComplexes();
     }
 
     async function toggleActive(shop) {
@@ -96,7 +149,7 @@ export default function ManageShops() {
 
     const filtered = shops.filter(s => {
         const matchesSearch = s.shop_no.toLowerCase().includes(search.toLowerCase());
-        const matchesTab = selectedTab === 'All' || s.complex === selectedTab;
+        const matchesTab = selectedTab === 'All' || s.complexes?.name === selectedTab;
         return matchesSearch && matchesTab;
     });
 
@@ -117,31 +170,57 @@ export default function ManageShops() {
                         onChange={(e) => setSearch(e.target.value)}
                     />
                 </div>
-                <button className="btn btn-primary" onClick={openAdd}>
-                    ➕ Add Shop
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <button className="btn btn-secondary" onClick={() => { setEditingComplex(null); setComplexForm({ name: '' }); setShowComplexModal(true); }}>
+                        🏢 Manage Complexes
+                    </button>
+                    <button className="btn btn-primary" onClick={openAdd}>
+                        ➕ Add Shop
+                    </button>
+                </div>
             </div>
 
-            <div className="tabs-container" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
-                {['All', 'Pump', 'New Complex', 'Tower'].map(tab => (
-                    <button
-                        key={tab}
-                        className={`tab-btn ${selectedTab === tab ? 'active' : ''}`}
-                        onClick={() => setSelectedTab(tab)}
-                        style={{
-                            padding: '8px 16px',
-                            borderRadius: 'var(--radius-md)',
-                            border: '1px solid var(--border-color)',
-                            background: selectedTab === tab ? 'var(--accent-primary)' : 'transparent',
-                            color: selectedTab === tab ? 'white' : 'var(--text-primary)',
-                            cursor: 'pointer',
-                            fontWeight: 600,
-                            transition: 'all 0.2s ease'
-                        }}
-                    >
-                        {tab}
-                    </button>
-                ))}
+            <div className="tabs-container" style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+                <button
+                    className={`tab-btn ${selectedTab === 'All' ? 'active' : ''}`}
+                    onClick={() => setSelectedTab('All')}
+                    style={{
+                        padding: '8px 16px',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-color)',
+                        background: selectedTab === 'All' ? 'var(--accent-primary)' : 'transparent',
+                        color: selectedTab === 'All' ? 'white' : 'var(--text-primary)',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                        transition: 'all 0.2s ease'
+                    }}
+                >
+                    All ({shops.length})
+                </button>
+                {complexes.map(comp => {
+                    const count = shops.filter(s => s.complex_id === comp.id).length;
+                    return (
+                        <button
+                            key={comp.id}
+                            className={`tab-btn ${selectedTab === comp.name ? 'active' : ''}`}
+                            onClick={() => setSelectedTab(comp.name)}
+                            style={{
+                                padding: '8px 16px',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px solid var(--border-color)',
+                                background: selectedTab === comp.name ? 'var(--accent-primary)' : 'transparent',
+                                color: selectedTab === comp.name ? 'white' : 'var(--text-primary)',
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                whiteSpace: 'nowrap',
+                                transition: 'all 0.2s ease'
+                            }}
+                        >
+                            {comp.name} ({count})
+                        </button>
+                    );
+                })}
             </div>
 
             {loading ? (
@@ -152,55 +231,118 @@ export default function ManageShops() {
                     <p>No shops found</p>
                 </div>
             ) : (
-                <div className="table-container">
-                    <table className="data-table">
-                        <thead>
-                            <tr>
-                                <th>Shop No</th>
-                                <th>Complex</th>
-                                <th>Category</th>
-                                <th>Assigned To</th>
-                                <th>Rent (₹)</th>
-                                <th>Collection Day</th>
-                                <th>Status</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {filtered.map((shop) => (
-                                <tr key={shop.id}>
-                                    <td style={{ fontWeight: 600 }}>{shop.shop_no}</td>
-                                    <td style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{shop.complex || 'New Complex'}</td>
-                                    <td>
-                                        <span className="shop-tag" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
-                                            {shop.category || 'Numeric'}
-                                        </span>
-                                    </td>
-                                    <td style={{ color: 'var(--text-secondary)' }}>
-                                        {shop.renter_shops && shop.renter_shops.length > 0
-                                            ? shop.renter_shops[0].renters?.name
-                                            : <span style={{ opacity: 0.5 }}>Unassigned</span>}
-                                    </td>
-                                    <td>₹{Number(shop.rent_amount).toLocaleString()}</td>
-                                    <td>Day {shop.rent_collection_day}</td>
-                                    <td>
-                                        <span className={`badge ${shop.is_active ? 'badge-paid' : 'badge-unpaid'}`}>
-                                            {shop.is_active ? 'Active' : 'Inactive'}
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
-                                            <button className="btn btn-secondary btn-sm" onClick={() => openEdit(shop)}>✏️</button>
-                                            <button className="btn btn-secondary btn-sm" onClick={() => toggleActive(shop)}>
-                                                {shop.is_active ? '🔴' : '🟢'}
-                                            </button>
-                                            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(shop.id)}>🗑️</button>
+                <div className="table-container" style={{ background: 'transparent', border: 'none' }}>
+                    {selectedTab === 'All' && !search ? (
+                        // Grouped View for "All"
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                            {complexes.map(comp => {
+                                const compShops = shops.filter(s => s.complex_id === comp.id);
+                                if (compShops.length === 0) return null;
+                                return (
+                                    <div key={comp.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                                        <div style={{ padding: '12px 20px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--accent-primary)' }}>{comp.name}</h3>
+                                            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{compShops.length} Shops</span>
                                         </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                        <table className="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Shop No</th>
+                                                    <th>Category</th>
+                                                    <th>Assigned To</th>
+                                                    <th>Rent (₹)</th>
+                                                    <th>Status</th>
+                                                    <th style={{ textAlign: 'right' }}>Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {compShops.map(shop => (
+                                                    <tr key={shop.id}>
+                                                        <td style={{ fontWeight: 600 }}>{shop.shop_no}</td>
+                                                        <td>
+                                                            <span className="shop-tag" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
+                                                                {shop.category || 'Numeric'}
+                                                            </span>
+                                                        </td>
+                                                        <td style={{ color: 'var(--text-secondary)' }}>
+                                                            {shop.renter_shops && shop.renter_shops.length > 0
+                                                                ? shop.renter_shops[0].renters?.name
+                                                                : <span style={{ opacity: 0.5 }}>Unassigned</span>}
+                                                        </td>
+                                                        <td>₹{Number(shop.rent_amount).toLocaleString()}</td>
+                                                        <td>
+                                                            <span className={`badge ${shop.is_active ? 'badge-paid' : 'badge-unpaid'}`}>
+                                                                {shop.is_active ? 'Active' : 'Inactive'}
+                                                            </span>
+                                                        </td>
+                                                        <td style={{ textAlign: 'right' }}>
+                                                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                                <button className="btn btn-secondary btn-sm" onClick={() => openEdit(shop)}>✏️</button>
+                                                                <button className="btn btn-secondary btn-sm" onClick={() => toggleActive(shop)}>
+                                                                    {shop.is_active ? '🔴' : '🟢'}
+                                                                </button>
+                                                                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(shop.id)}>🗑️</button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        // Standard Table View (Filtered or specific complex)
+                        <div className="card" style={{ padding: 0 }}>
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Shop No</th>
+                                        {selectedTab === 'All' && <th>Complex</th>}
+                                        <th>Category</th>
+                                        <th>Assigned To</th>
+                                        <th>Rent (₹)</th>
+                                        <th>Status</th>
+                                        <th style={{ textAlign: 'right' }}>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {filtered.map((shop) => (
+                                        <tr key={shop.id}>
+                                            <td style={{ fontWeight: 600 }}>{shop.shop_no}</td>
+                                            {selectedTab === 'All' && <td style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{shop.complexes?.name || '—'}</td>}
+                                            <td>
+                                                <span className="shop-tag" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
+                                                    {shop.category || 'Numeric'}
+                                                </span>
+                                            </td>
+                                            <td style={{ color: 'var(--text-secondary)' }}>
+                                                {shop.renter_shops && shop.renter_shops.length > 0
+                                                    ? shop.renter_shops[0].renters?.name
+                                                    : <span style={{ opacity: 0.5 }}>Unassigned</span>}
+                                            </td>
+                                            <td>₹{Number(shop.rent_amount).toLocaleString()}</td>
+                                            <td>
+                                                <span className={`badge ${shop.is_active ? 'badge-paid' : 'badge-unpaid'}`}>
+                                                    {shop.is_active ? 'Active' : 'Inactive'}
+                                                </span>
+                                            </td>
+                                            <td style={{ textAlign: 'right' }}>
+                                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                    <button className="btn btn-secondary btn-sm" onClick={() => openEdit(shop)}>✏️</button>
+                                                    <button className="btn btn-secondary btn-sm" onClick={() => toggleActive(shop)}>
+                                                        {shop.is_active ? '🔴' : '🟢'}
+                                                    </button>
+                                                    <button className="btn btn-danger btn-sm" onClick={() => handleDelete(shop.id)}>🗑️</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -214,32 +356,21 @@ export default function ManageShops() {
                         </div>
                         <form onSubmit={handleSave}>
                             <div className="form-group">
-                                <label className="form-label">Select Complex</label>
-                                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                                    {['Pump', 'New Complex', 'Tower'].map(c => (
-                                        <button
-                                            key={c}
-                                            type="button"
-                                            onClick={() => setForm({ ...form, complex: c })}
-                                            style={{
-                                                flex: 1,
-                                                padding: '10px',
-                                                borderRadius: 'var(--radius-md)',
-                                                border: `2px solid ${form.complex === c ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-                                                background: form.complex === c ? 'var(--accent-glow)' : 'transparent',
-                                                color: form.complex === c ? 'var(--accent-primary-hover)' : 'var(--text-secondary)',
-                                                fontWeight: 700,
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s ease'
-                                            }}
-                                        >
-                                            {c}
-                                        </button>
+                                <label className="form-label">Complex</label>
+                                <select
+                                    className="form-select"
+                                    value={form.complex_id}
+                                    onChange={(e) => setForm({ ...form, complex_id: e.target.value })}
+                                    required
+                                >
+                                    <option value="">-- Select Complex --</option>
+                                    {complexes.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
                                     ))}
-                                </div>
+                                </select>
                             </div>
                             <div className="form-group">
-                                <label className="form-label">Select Category</label>
+                                <label className="form-label">Category</label>
                                 <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
                                     {[
                                         { id: 'Numeric', label: 'Numeric' },
@@ -307,6 +438,70 @@ export default function ManageShops() {
                                 <button type="submit" className="btn btn-primary">{editingShop ? 'Update' : 'Add Shop'}</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Manage Complexes Modal */}
+            {showComplexModal && (
+                <div className="modal-overlay" onClick={() => setShowComplexModal(false)}>
+                    <div className="modal-content" style={{ maxWidth: '600px' }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2>🏢 Manage Complexes</h2>
+                            <button className="modal-close" onClick={() => setShowComplexModal(false)}>×</button>
+                        </div>
+
+                        <form onSubmit={handleSaveComplex} style={{ marginBottom: '24px', padding: '16px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-md)' }}>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                                <div style={{ flex: 1 }}>
+                                    <label className="form-label">{editingComplex ? 'Rename Complex' : 'Add New Complex'}</label>
+                                    <input
+                                        className="form-input"
+                                        value={complexForm.name}
+                                        onChange={e => setComplexForm({ name: e.target.value })}
+                                        placeholder="e.g. Silver Plaza"
+                                        required
+                                    />
+                                </div>
+                                <button type="submit" className="btn btn-primary" style={{ height: '42px' }}>
+                                    {editingComplex ? 'Update' : 'Add'}
+                                </button>
+                                {editingComplex && (
+                                    <button type="button" className="btn btn-secondary" style={{ height: '42px' }} onClick={() => { setEditingComplex(null); setComplexForm({ name: '' }); }}>
+                                        Cancel
+                                    </button>
+                                )}
+                            </div>
+                        </form>
+
+                        <div className="table-container" style={{ border: 'none' }}>
+                            <table className="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Shops</th>
+                                        <th style={{ textAlign: 'right' }}>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {complexes.map(c => {
+                                        const count = shops.filter(s => s.complex_id === c.id).length;
+                                        return (
+                                            <tr key={c.id}>
+                                                <td style={{ fontWeight: 600 }}>{c.name}</td>
+                                                <td>{count} shops</td>
+                                                <td style={{ textAlign: 'right' }}>
+                                                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                                                        <button className="btn btn-secondary btn-sm" onClick={() => { setEditingComplex(c); setComplexForm({ name: c.name }); }}>✏️</button>
+                                                        <button className="btn btn-danger btn-sm" onClick={() => deleteComplex(c.id)}>🗑️</button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             )}
