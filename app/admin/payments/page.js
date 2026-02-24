@@ -42,8 +42,7 @@ export default function PaymentsReport() {
             .select(`
                 *,
                 renters(id, renter_code, name),
-                profiles:collector_user_id(full_name),
-                shops:shop_id(id, shop_no, complexes(name))
+                profiles:collector_user_id(full_name)
             `);
 
         if (filterType === 'month') {
@@ -68,45 +67,72 @@ export default function PaymentsReport() {
 
         // 3. Synthesize Full Report
         const fullReport = [];
-        const seenKeys = new Set(); // renterId-shopId
+        const paymentMap = {}; // renterId -> payment record
 
-        // Add recorded payments first
         (recordedPayments || []).forEach(p => {
-            const key = `${String(p.renter_id || '').toLowerCase()}-${String(p.shop_id || '').toLowerCase()}`;
-            seenKeys.add(key);
-            fullReport.push({
-                ...p,
-                complexName: p.shops?.complexes?.name || '—',
-                shopNo: p.shops?.shop_no || '—',
-                renterCode: p.renters?.renter_code || '—',
-                renterName: p.renters?.name || '—',
-                type: 'recorded'
-            });
+            const rId = String(p.renter_id || '').toLowerCase();
+            paymentMap[rId] = p;
         });
 
-        // Add missing assignments if filter is Monthwise
-        if (filterType === 'month') {
-            (assignments || []).forEach(asn => {
-                const key = `${String(asn.renter_id || '').toLowerCase()}-${String(asn.shop_id || '').toLowerCase()}`;
-                if (!seenKeys.has(key)) {
-                    fullReport.push({
-                        id: `missing-${key}`,
-                        renter_id: asn.renter_id,
-                        shop_id: asn.shop_id,
-                        period_month: monthFilter,
-                        expected_amount: asn.shops?.rent_amount || 0,
-                        received_amount: 0,
-                        status: 'unpaid',
-                        collection_date: null,
-                        complexName: asn.shops?.complexes?.name || '—',
-                        shopNo: asn.shops?.shop_no || '—',
-                        renterCode: asn.renters?.renter_code || '—',
-                        renterName: asn.renters?.name || '—',
-                        type: 'missing'
-                    });
-                }
-            });
-        }
+        const seenPaymentIds = new Set();
+
+        // Base the report on Assignments (all shops that SHOULD pay)
+        (assignments || []).forEach(asn => {
+            const rId = String(asn.renter_id || '').toLowerCase();
+            const payment = paymentMap[rId];
+
+            if (payment) {
+                // Renter has a payment. Allocate it to this shop row.
+                // We show the same rent status for all shops of this renter.
+                fullReport.push({
+                    ...payment,
+                    id: `${payment.id}-${asn.shop_id}`, // Unique ID for table row
+                    expected_amount: asn.shops?.rent_amount || 0,
+                    // If it's a multi-shop renter, the total received is stored in 'payment.received_amount'.
+                    // For the shop-wise list, we can show the shop's rent if fully paid, or proportional if partial.
+                    received_amount: payment.status === 'paid'
+                        ? (asn.shops?.rent_amount || 0)
+                        : (Number(payment.received_amount) * (Number(asn.shops?.rent_amount || 0) / (assignments.filter(a => String(a.renter_id).toLowerCase() === rId).reduce((s, a) => s + Number(a.shops?.rent_amount || 0), 0) || 1))),
+                    complexName: asn.shops?.complexes?.name || '—',
+                    shopNo: asn.shops?.shop_no || '—',
+                    renterCode: asn.renters?.renter_code || '—',
+                    renterName: asn.renters?.name || '—',
+                    type: 'recorded'
+                });
+                seenPaymentIds.add(payment.id);
+            } else if (filterType === 'month') {
+                // Missing entry for this shop
+                fullReport.push({
+                    id: `missing-${asn.renter_id}-${asn.shop_id}`,
+                    renter_id: asn.renter_id,
+                    shop_id: asn.shop_id,
+                    period_month: monthFilter,
+                    expected_amount: asn.shops?.rent_amount || 0,
+                    received_amount: 0,
+                    status: 'unpaid',
+                    collection_date: null,
+                    complexName: asn.shops?.complexes?.name || '—',
+                    shopNo: asn.shops?.shop_no || '—',
+                    renterCode: asn.renters?.renter_code || '—',
+                    renterName: asn.renters?.name || '—',
+                    type: 'missing'
+                });
+            }
+        });
+
+        // Add any recorded payments that DON'T match an active assignment (orphan records)
+        (recordedPayments || []).forEach(p => {
+            if (!seenPaymentIds.has(p.id)) {
+                fullReport.push({
+                    ...p,
+                    complexName: '—',
+                    shopNo: '—',
+                    renterCode: p.renters?.renter_code || '—',
+                    renterName: p.renters?.name || '—',
+                    type: 'recorded'
+                });
+            }
+        });
 
         setPayments(fullReport);
         setLoading(false);
