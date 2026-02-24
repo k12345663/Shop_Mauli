@@ -83,7 +83,7 @@ export default function AdminDashboard() {
 
         const paymentList = [];
         Object.values(renterMap).forEach(renter => {
-            const payment = payments.find(p => p.renter_id === renter.id);
+            const payment = payments.find(p => p.renter_id?.toLowerCase() === renter.id?.toLowerCase());
             if (!payment) {
                 paymentList.push({
                     name: renter.name,
@@ -246,8 +246,8 @@ export default function AdminDashboard() {
                                                     <td style={{ fontSize: '0.85rem' }}>{d.shops}</td>
                                                     <td>
                                                         <span className={`badge ${d.status === 'Unpaid' ? 'badge-unpaid' :
-                                                                d.status === 'Partial' ? 'badge-partial' :
-                                                                    'badge-paid'
+                                                            d.status === 'Partial' ? 'badge-partial' :
+                                                                'badge-paid'
                                                             }`}>
                                                             {d.status === 'Unpaid' ? '❌ Unpaid' :
                                                                 d.status === 'Partial' ? '⚠️ Partial' :

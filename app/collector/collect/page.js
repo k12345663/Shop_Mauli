@@ -83,7 +83,7 @@ function CollectContent() {
         const results = await Promise.all(selectedMonths.map(async (month) => {
             const status = getStatus(amountPerMonth);
             const payload = {
-                renter_id: parseInt(renterId),
+                renter_id: renterId,
                 collector_user_id: user.id,
                 period_month: month,
                 expected_amount: expectedAmountPerMonth,
