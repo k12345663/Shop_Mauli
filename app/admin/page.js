@@ -41,7 +41,6 @@ export default function AdminDashboard() {
         ]);
 
         const payments = paymentRes.data || [];
-        const totalExpected = payments.reduce((s, p) => s + Number(p.expected_amount), 0);
         const totalReceived = payments.reduce((s, p) => s + Number(p.received_amount), 0);
 
         // Calculate complex-wise stats accurately
@@ -66,7 +65,7 @@ export default function AdminDashboard() {
         setStats({
             totalShops: shopRes.count || 0,
             totalRenters: renterRes.count || 0,
-            totalExpected,
+            totalExpected: totalPortfolioRent,
             totalReceived,
             totalPortfolioDeposit,
             totalPortfolioRent,
