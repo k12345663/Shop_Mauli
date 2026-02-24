@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import StatusBadge from '@/components/StatusBadge';
 import MonthPicker from '@/components/MonthPicker';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 export default function PaymentsReport() {
     const [payments, setPayments] = useState([]);
@@ -127,7 +127,7 @@ export default function PaymentsReport() {
             });
         });
 
-        doc.autoTable({
+        autoTable(doc, {
             startY: 80,
             head: [['Code', 'Renter', 'Shops', 'Expected', 'Received', 'Status', 'Date/Period']],
             body: tableData,
