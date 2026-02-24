@@ -16,7 +16,7 @@ export default function AdminDashboard() {
         partialCount: 0,
         unpaidCount: 0,
         complexStats: [], // [{ name: '', shops: 0, deposit: 0, rentPotential: 0 }]
-        defaulters: [] // [{ name: '', code: '', shops: '', status: 'Unpaid' | 'Partial' }]
+        paymentList: [] // [{ name: '', code: '', shops: '', status: 'Unpaid' | 'Partial' | 'Paid', pending: 0 }]
     });
     const [currentMonth, setCurrentMonth] = useState('');
     const [loading, setLoading] = useState(true);
@@ -81,32 +81,43 @@ export default function AdminDashboard() {
             renterMap[asn.renters.id].totalRent += Number(asn.shops?.rent_amount || 0);
         });
 
-        const defaulters = [];
+        const paymentList = [];
         Object.values(renterMap).forEach(renter => {
             const payment = payments.find(p => p.renter_id === renter.id);
             if (!payment) {
-                defaulters.push({
+                paymentList.push({
                     name: renter.name,
                     code: renter.code,
                     shops: renter.shops.join(', '),
                     status: 'Unpaid',
-                    pending: renter.totalRent
+                    pending: renter.totalRent,
+                    severity: 3
                 });
             } else if (payment.status === 'partial') {
-                defaulters.push({
+                paymentList.push({
                     name: renter.name,
                     code: renter.code,
                     shops: renter.shops.join(', '),
                     status: 'Partial',
-                    pending: Number(payment.expected_amount) - Number(payment.received_amount)
+                    pending: Number(payment.expected_amount) - Number(payment.received_amount),
+                    severity: 2
+                });
+            } else {
+                paymentList.push({
+                    name: renter.name,
+                    code: renter.code,
+                    shops: renter.shops.join(', '),
+                    status: 'Paid',
+                    pending: 0,
+                    severity: 1
                 });
             }
         });
 
-        // Sort defaulters: Unpaid first, then by amount
-        defaulters.sort((a, b) => {
-            if (a.status === b.status) return b.pending - a.pending;
-            return a.status === 'Unpaid' ? -1 : 1;
+        // Sort: Unpaid (3) > Partial (2) > Paid (1). Then by pending amount.
+        paymentList.sort((a, b) => {
+            if (a.severity !== b.severity) return b.severity - a.severity;
+            return b.pending - a.pending;
         });
 
         const totalPortfolioDeposit = complexStats.reduce((s, c) => s + c.deposit, 0);
@@ -120,7 +131,7 @@ export default function AdminDashboard() {
             totalPortfolioDeposit,
             totalPortfolioRent,
             complexStats,
-            defaulters,
+            paymentList,
             paidCount: payments.filter(p => p.status === 'paid').length,
             partialCount: payments.filter(p => p.status === 'partial').length,
             unpaidCount: payments.filter(p => p.status === 'unpaid').length,
@@ -204,9 +215,9 @@ export default function AdminDashboard() {
                         </div>
                     </div>
 
-                    {/* Defaulters and Partial Payments */}
+                    {/* Monthly Payment Status */}
                     <div style={{ marginBottom: '32px' }}>
-                        <h3 style={{ marginBottom: '16px', fontWeight: 700 }}>Defaulters & Partial Payments ({stats.defaulters.length})</h3>
+                        <h3 style={{ marginBottom: '16px', fontWeight: 700 }}>Monthly Payment Status ({stats.paymentList.length})</h3>
                         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
                             <div className="table-container" style={{ margin: 0, border: 'none' }}>
                                 <table className="data-table">
@@ -219,14 +230,14 @@ export default function AdminDashboard() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {stats.defaulters.length === 0 ? (
+                                        {stats.paymentList.length === 0 ? (
                                             <tr>
                                                 <td colSpan="4" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
-                                                    🎉 All payments for this month are complete!
+                                                    📭 No shop assignments found for this month.
                                                 </td>
                                             </tr>
                                         ) : (
-                                            stats.defaulters.map((d, i) => (
+                                            stats.paymentList.map((d, i) => (
                                                 <tr key={i}>
                                                     <td>
                                                         <div style={{ fontWeight: 600 }}>{d.name}</div>
@@ -234,11 +245,16 @@ export default function AdminDashboard() {
                                                     </td>
                                                     <td style={{ fontSize: '0.85rem' }}>{d.shops}</td>
                                                     <td>
-                                                        <span className={`badge ${d.status === 'Unpaid' ? 'badge-unpaid' : 'badge-partial'}`}>
-                                                            {d.status === 'Unpaid' ? '❌ Unpaid' : '⚠️ Partial'}
+                                                        <span className={`badge ${d.status === 'Unpaid' ? 'badge-unpaid' :
+                                                                d.status === 'Partial' ? 'badge-partial' :
+                                                                    'badge-paid'
+                                                            }`}>
+                                                            {d.status === 'Unpaid' ? '❌ Unpaid' :
+                                                                d.status === 'Partial' ? '⚠️ Partial' :
+                                                                    '✅ Paid'}
                                                         </span>
                                                     </td>
-                                                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--status-unpaid)' }}>
+                                                    <td style={{ textAlign: 'right', fontWeight: 700, color: d.pending > 0 ? 'var(--status-unpaid)' : 'var(--status-paid)' }}>
                                                         ₹{d.pending.toLocaleString()}
                                                     </td>
                                                 </tr>
