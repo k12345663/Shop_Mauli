@@ -116,6 +116,7 @@ function CollectContent() {
                         renterCode: renter.renter_code,
                         renterName: renter.name,
                         shops: shops.map(s => s.shop_no).join(', '),
+                        complex: shops[0]?.complexes?.name || 'Main',
                         month: month,
                         status: getStatus(amountPerMonth),
                         received: amountPerMonth,
