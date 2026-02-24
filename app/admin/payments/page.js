@@ -35,47 +35,94 @@ export default function PaymentsReport() {
 
     async function fetchPayments() {
         setLoading(true);
-        let query = supabase
+
+        // 1. Fetch Recorded Payments
+        let paymentQuery = supabase
             .from('rent_payments')
             .select(`
                 *,
-                renters(
-                    renter_code, 
-                    name,
-                    renter_shops(
-                        shops(
-                            shop_no,
-                            complexes(name)
-                        )
-                    )
-                ),
-                profiles:collector_user_id(full_name)
+                renters(id, renter_code, name),
+                profiles:collector_user_id(full_name),
+                shops:shop_id(id, shop_no, complexes(name))
             `);
 
         if (filterType === 'month') {
-            query = query.eq('period_month', monthFilter);
+            paymentQuery = paymentQuery.eq('period_month', monthFilter);
         } else if (filterType === 'range') {
-            if (startDate) query = query.gte('collection_date', startDate);
-            if (endDate) query = query.lte('collection_date', endDate);
+            if (startDate) paymentQuery = paymentQuery.gte('collection_date', startDate);
+            if (endDate) paymentQuery = paymentQuery.lte('collection_date', endDate);
         } else if (filterType === 'day') {
-            if (specificDate) query = query.eq('collection_date', specificDate);
+            if (specificDate) paymentQuery = paymentQuery.eq('collection_date', specificDate);
         }
 
-        if (statusFilter !== 'all') {
-            query = query.eq('status', statusFilter);
+        const { data: recordedPayments } = await paymentQuery.order('collection_date', { ascending: false });
+
+        // 2. Fetch All Active Shop Assignments
+        const { data: assignments } = await supabase
+            .from('renter_shops')
+            .select(`
+                *,
+                renters(id, renter_code, name),
+                shops(id, shop_no, rent_amount, complexes(id, name))
+            `);
+
+        // 3. Synthesize Full Report
+        const fullReport = [];
+        const seenKeys = new Set(); // renterId-shopId
+
+        // Add recorded payments first
+        (recordedPayments || []).forEach(p => {
+            const key = `${p.renter_id}-${p.shop_id}`;
+            seenKeys.add(key);
+            fullReport.push({
+                ...p,
+                complexName: p.shops?.complexes?.name || '—',
+                shopNo: p.shops?.shop_no || '—',
+                renterCode: p.renters?.renter_code || '—',
+                renterName: p.renters?.name || '—',
+                type: 'recorded'
+            });
+        });
+
+        // Add missing assignments if filter is Monthwise
+        if (filterType === 'month') {
+            (assignments || []).forEach(asn => {
+                const key = `${asn.renter_id}-${asn.shop_id}`;
+                if (!seenKeys.has(key)) {
+                    fullReport.push({
+                        id: `missing-${key}`,
+                        renter_id: asn.renter_id,
+                        shop_id: asn.shop_id,
+                        period_month: monthFilter,
+                        expected_amount: asn.shops?.rent_amount || 0,
+                        received_amount: 0,
+                        status: 'unpaid',
+                        collection_date: null,
+                        complexName: asn.shops?.complexes?.name || '—',
+                        shopNo: asn.shops?.shop_no || '—',
+                        renterCode: asn.renters?.renter_code || '—',
+                        renterName: asn.renters?.name || '—',
+                        type: 'missing'
+                    });
+                }
+            });
         }
 
-        const { data } = await query.order('collection_date', { ascending: false });
-        setPayments(data || []);
+        setPayments(fullReport);
         setLoading(false);
     }
 
     const filtered = payments.filter(p => {
+        const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
+        if (!matchesStatus) return false;
+
         if (!searchFilter) return true;
         const s = searchFilter.toLowerCase();
         return (
-            p.renters?.renter_code?.toLowerCase().includes(s) ||
-            p.renters?.name?.toLowerCase().includes(s)
+            p.renterCode?.toLowerCase().includes(s) ||
+            p.renterName?.toLowerCase().includes(s) ||
+            p.shopNo?.toLowerCase().includes(s) ||
+            p.complexName?.toLowerCase().includes(s)
         );
     });
 
@@ -114,33 +161,36 @@ export default function PaymentsReport() {
             tableData.push([{ content: complexName, colSpan: 7, styles: { fillColor: [240, 240, 240], fontStyle: 'bold' } }]);
 
             groups[complexName].forEach(p => {
-                const shops = p.renters?.renter_shops?.map(rs => rs.shops?.shop_no).join(', ') || '—';
                 tableData.push([
-                    p.renters?.renter_code || '—',
-                    p.renters?.name || '—',
-                    shops,
+                    p.renterCode,
+                    p.renterName,
+                    p.shopNo,
                     `Rs. ${Number(p.expected_amount).toLocaleString()}`,
                     `Rs. ${Number(p.received_amount).toLocaleString()}`,
                     p.status.toUpperCase(),
-                    p.collection_date || p.period_month
+                    p.collection_date
+                        ? new Date(p.collection_date).toLocaleDateString('en-IN')
+                        : (p.period_month || '—')
                 ]);
             });
         });
 
         autoTable(doc, {
             startY: 80,
-            head: [['Code', 'Renter', 'Shops', 'Expected', 'Received', 'Status', 'Date/Period']],
+            head: [['Code', 'Renter Name', 'Shop #', 'Expected', 'Received', 'Status', 'Date/Period']],
             body: tableData,
             theme: 'grid',
             headStyles: { fillColor: [63, 81, 181] },
             styles: { fontSize: 8 },
             columnStyles: {
-                0: { cellWidth: 20 },
-                2: { cellWidth: 30 }
+                0: { cellWidth: 18 },
+                1: { cellWidth: 45 },
+                2: { cellWidth: 20 },
+                5: { cellWidth: 20 }
             }
         });
 
-        doc.save(`RentFlow_Report_${new Date().getTime()}.pdf`);
+        doc.save(`RentFlow_Full_Report_${new Date().getTime()}.pdf`);
     };
 
     return (
@@ -276,29 +326,32 @@ export default function PaymentsReport() {
                                 <th>Complex</th>
                                 <th>Renter</th>
                                 <th>Name</th>
+                                <th>Shop No</th>
                                 <th>Expected</th>
                                 <th>Received</th>
                                 <th>Status</th>
-                                <th>Date</th>
+                                <th>Date/Period</th>
                             </tr>
                         </thead>
                         <tbody>
                             {filtered.map((p) => {
-                                const complexNames = [...new Set(p.renters?.renter_shops?.map(rs => rs.shops?.complexes?.name) || [])].join(', ') || '—';
                                 return (
                                     <tr key={p.id}>
                                         <td style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                                            {complexNames}
+                                            {p.complexName}
                                         </td>
                                         <td style={{ fontWeight: 600, color: 'var(--accent-primary-hover)' }}>
-                                            {p.renters?.renter_code || '—'}
+                                            {p.renterCode}
                                         </td>
-                                        <td>{p.renters?.name || '—'}</td>
+                                        <td style={{ fontWeight: 500 }}>{p.renterName}</td>
+                                        <td style={{ fontWeight: 600 }}>{p.shopNo}</td>
                                         <td style={{ color: 'var(--text-secondary)' }}>₹{Number(p.expected_amount).toLocaleString()}</td>
                                         <td style={{ fontWeight: 700 }}>₹{Number(p.received_amount).toLocaleString()}</td>
                                         <td><StatusBadge status={p.status} /></td>
                                         <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                            {p.collection_date ? new Date(p.collection_date).toLocaleDateString('en-IN') : '—'}
+                                            {p.collection_date
+                                                ? new Date(p.collection_date).toLocaleDateString('en-IN')
+                                                : p.period_month}
                                         </td>
                                     </tr>
                                 );
