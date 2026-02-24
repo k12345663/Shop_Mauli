@@ -12,6 +12,10 @@ export default function AssignShops() {
     const [shopDeposits, setShopDeposits] = useState({}); // { shopId: deposit }
     const [complexes, setComplexes] = useState([]);
     const [selectedTab, setSelectedTab] = useState('All');
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [toast, setToast] = useState(null);
+    const [search, setSearch] = useState('');
 
     useEffect(() => {
         Promise.all([fetchRenters(), fetchShops(), fetchComplexes()]).then(() => setLoading(false));
