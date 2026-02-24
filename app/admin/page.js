@@ -15,7 +15,8 @@ export default function AdminDashboard() {
         paidCount: 0,
         partialCount: 0,
         unpaidCount: 0,
-        complexStats: [] // [{ name: '', shops: 0, deposit: 0, rentPotential: 0 }]
+        complexStats: [], // [{ name: '', shops: 0, deposit: 0, rentPotential: 0 }]
+        defaulters: [] // [{ name: '', code: '', shops: '', status: 'Unpaid' | 'Partial' }]
     });
     const [currentMonth, setCurrentMonth] = useState('');
     const [loading, setLoading] = useState(true);
@@ -33,11 +34,12 @@ export default function AdminDashboard() {
     async function fetchStats() {
         setLoading(true);
 
-        const [shopRes, renterRes, paymentRes, complexRes] = await Promise.all([
+        const [shopRes, renterRes, paymentRes, complexRes, renterShopAssignmentsRes] = await Promise.all([
             supabase.from('shops').select('id, rent_amount, complex_id', { count: 'exact' }).eq('is_active', true),
             supabase.from('renters').select('id', { count: 'exact', head: true }),
             supabase.from('rent_payments').select('*').eq('period_month', currentMonth),
-            supabase.from('complexes').select('id, name, shops(id, rent_amount, renter_shops(deposit_amount))')
+            supabase.from('complexes').select('id, name, shops(id, rent_amount, renter_shops(deposit_amount))'),
+            supabase.from('renter_shops').select('*, renters(id, name, renter_code), shops(shop_no, complexes(name))')
         ]);
 
         const payments = paymentRes.data || [];
@@ -59,6 +61,54 @@ export default function AdminDashboard() {
             };
         });
 
+        // Calculate Defaulters
+        const assignments = renterShopAssignmentsRes.data || [];
+
+        // Group assignments by renter
+        const renterMap = {};
+        assignments.forEach(asn => {
+            if (!asn.renters) return;
+            if (!renterMap[asn.renters.id]) {
+                renterMap[asn.renters.id] = {
+                    id: asn.renters.id,
+                    name: asn.renters.name,
+                    code: asn.renters.renter_code,
+                    shops: [],
+                    totalRent: 0
+                };
+            }
+            renterMap[asn.renters.id].shops.push(asn.shops?.shop_no);
+            renterMap[asn.renters.id].totalRent += Number(asn.shops?.rent_amount || 0);
+        });
+
+        const defaulters = [];
+        Object.values(renterMap).forEach(renter => {
+            const payment = payments.find(p => p.renter_id === renter.id);
+            if (!payment) {
+                defaulters.push({
+                    name: renter.name,
+                    code: renter.code,
+                    shops: renter.shops.join(', '),
+                    status: 'Unpaid',
+                    pending: renter.totalRent
+                });
+            } else if (payment.status === 'partial') {
+                defaulters.push({
+                    name: renter.name,
+                    code: renter.code,
+                    shops: renter.shops.join(', '),
+                    status: 'Partial',
+                    pending: Number(payment.expected_amount) - Number(payment.received_amount)
+                });
+            }
+        });
+
+        // Sort defaulters: Unpaid first, then by amount
+        defaulters.sort((a, b) => {
+            if (a.status === b.status) return b.pending - a.pending;
+            return a.status === 'Unpaid' ? -1 : 1;
+        });
+
         const totalPortfolioDeposit = complexStats.reduce((s, c) => s + c.deposit, 0);
         const totalPortfolioRent = complexStats.reduce((s, c) => s + c.rentPotential, 0);
 
@@ -70,6 +120,7 @@ export default function AdminDashboard() {
             totalPortfolioDeposit,
             totalPortfolioRent,
             complexStats,
+            defaulters,
             paidCount: payments.filter(p => p.status === 'paid').length,
             partialCount: payments.filter(p => p.status === 'partial').length,
             unpaidCount: payments.filter(p => p.status === 'unpaid').length,
@@ -149,6 +200,52 @@ export default function AdminDashboard() {
                             <div className="stat-card">
                                 <div className="stat-label">Collection Rate</div>
                                 <div className="stat-value" style={{ color: 'var(--accent-primary)' }}>{collectionRate}%</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Defaulters and Partial Payments */}
+                    <div style={{ marginBottom: '32px' }}>
+                        <h3 style={{ marginBottom: '16px', fontWeight: 700 }}>Defaulters & Partial Payments ({stats.defaulters.length})</h3>
+                        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                            <div className="table-container" style={{ margin: 0, border: 'none' }}>
+                                <table className="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Renter</th>
+                                            <th>Shop</th>
+                                            <th>Status</th>
+                                            <th style={{ textAlign: 'right' }}>Pending (₹)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {stats.defaulters.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="4" style={{ textAlign: 'center', padding: '20px', color: 'var(--text-muted)' }}>
+                                                    🎉 All payments for this month are complete!
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            stats.defaulters.map((d, i) => (
+                                                <tr key={i}>
+                                                    <td>
+                                                        <div style={{ fontWeight: 600 }}>{d.name}</div>
+                                                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{d.code}</div>
+                                                    </td>
+                                                    <td style={{ fontSize: '0.85rem' }}>{d.shops}</td>
+                                                    <td>
+                                                        <span className={`badge ${d.status === 'Unpaid' ? 'badge-unpaid' : 'badge-partial'}`}>
+                                                            {d.status === 'Unpaid' ? '❌ Unpaid' : '⚠️ Partial'}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--status-unpaid)' }}>
+                                                        ₹{d.pending.toLocaleString()}
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
