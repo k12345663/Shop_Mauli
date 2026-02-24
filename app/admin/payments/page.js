@@ -72,7 +72,7 @@ export default function PaymentsReport() {
 
         // Add recorded payments first
         (recordedPayments || []).forEach(p => {
-            const key = `${p.renter_id}-${p.shop_id}`;
+            const key = `${String(p.renter_id || '').toLowerCase()}-${String(p.shop_id || '').toLowerCase()}`;
             seenKeys.add(key);
             fullReport.push({
                 ...p,
@@ -87,7 +87,7 @@ export default function PaymentsReport() {
         // Add missing assignments if filter is Monthwise
         if (filterType === 'month') {
             (assignments || []).forEach(asn => {
-                const key = `${asn.renter_id}-${asn.shop_id}`;
+                const key = `${String(asn.renter_id || '').toLowerCase()}-${String(asn.shop_id || '').toLowerCase()}`;
                 if (!seenKeys.has(key)) {
                     fullReport.push({
                         id: `missing-${key}`,

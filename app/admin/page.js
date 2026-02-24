@@ -83,7 +83,7 @@ export default function AdminDashboard() {
 
         const paymentList = [];
         Object.values(renterMap).forEach(renter => {
-            const payment = payments.find(p => p.renter_id?.toLowerCase() === renter.id?.toLowerCase());
+            const payment = payments.find(p => String(p.renter_id || '').toLowerCase() === String(renter.id || '').toLowerCase());
             if (!payment) {
                 paymentList.push({
                     name: renter.name,
