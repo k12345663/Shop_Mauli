@@ -23,6 +23,8 @@ const NAV_ITEMS = {
     { href: '/admin/renters', label: 'Manage Renters', icon: '👤' },
     { href: '/admin/assign', label: 'Assign Shops', icon: '🔗' },
     { href: '/admin/payments', label: 'Payments Report', icon: '💰' },
+    { href: '/admin/approvals', label: 'User Approvals', icon: '✅' },
+    { href: '/admin/users', label: 'Manage Users', icon: '👥' },
     { href: '/owner', label: 'Analytics', icon: '📈' },
   ],
   dba: [
