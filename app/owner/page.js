@@ -64,8 +64,11 @@ export default function OwnerAnalytics() {
                 const totalPortfolioDeposit = complexStats.reduce((s, c) => s + c.deposit, 0);
                 const totalPortfolioRent = complexStats.reduce((s, c) => s + c.rentPotential, 0);
 
-                // 2. Calculate monthly collection stats
-                const totalExpected = monthlyPayments.reduce((s, p) => s + Number(p.expectedAmount || 0), 0);
+                // 2. Calculate monthly collection stats based on active assignments
+                const totalExpected = assignments.reduce((s, a) => {
+                    if (a.shops?.isActive) return s + Number(a.shops.rentAmount || 0);
+                    return s;
+                }, 0);
                 const totalReceived = monthlyPayments.reduce((s, p) => s + Number(p.receivedAmount || 0), 0);
 
                 setPayments(monthlyPayments);

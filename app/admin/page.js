@@ -63,11 +63,17 @@ export default function AdminDashboard() {
                 };
             });
 
+            // Calculate active expected rent from assignments
+            const totalExpected = assignments.reduce((s, a) => {
+                if (a.shops?.isActive) return s + Number(a.shops.rentAmount || 0);
+                return s;
+            }, 0);
+
             // Calculate Defaulters
             // Group assignments by renter
             const renterMap = {};
             assignments.forEach(asn => {
-                if (!asn.renters) return;
+                if (!asn.renters || !asn.shops?.isActive) return;
                 if (!renterMap[asn.renters.id]) {
                     renterMap[asn.renters.id] = {
                         id: asn.renters.id,
@@ -126,7 +132,7 @@ export default function AdminDashboard() {
             setStats({
                 totalShops: shopsData.length,
                 totalRenters: rentersData.length,
-                totalExpected: totalPortfolioRent,
+                totalExpected: totalExpected,
                 totalReceived,
                 totalPortfolioDeposit,
                 totalPortfolioRent,
