@@ -22,6 +22,7 @@ export default function AdminDashboard() {
 
     useEffect(() => {
         const now = new Date();
+        now.setMonth(now.getMonth() - 1); // Default to previous month
         const month = now.toLocaleString('en-US', { month: 'short', year: 'numeric' });
         setCurrentMonth(month.replace(' ', '-'));
     }, []);

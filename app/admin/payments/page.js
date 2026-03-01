@@ -19,7 +19,9 @@ export default function PaymentsReport() {
 
     useEffect(() => {
         const now = new Date();
-        const month = now.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+        const prevMonth = new Date(now);
+        prevMonth.setMonth(prevMonth.getMonth() - 1); // Default to previous month
+        const month = prevMonth.toLocaleString('en-US', { month: 'short', year: 'numeric' });
         setMonthFilter(month.replace(' ', '-'));
 
         const today = now.toISOString().split('T')[0];
@@ -224,7 +226,7 @@ export default function PaymentsReport() {
                 </button>
             </div>
 
-            <div className="card" style={{ marginBottom: '24px', padding: '16px' }}>
+            <div className="card" style={{ marginBottom: '24px', padding: '16px', position: 'relative', zIndex: 10 }}>
                 <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
                     {['month', 'range', 'day'].map(type => (
                         <button

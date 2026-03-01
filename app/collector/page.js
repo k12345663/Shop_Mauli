@@ -10,9 +10,10 @@ export default function CollectorSearch() {
     const [results, setResults] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // Initialize to current month
+    // Initialize to previous month
     const [selectedMonth, setSelectedMonth] = useState(() => {
         const d = new Date();
+        d.setMonth(d.getMonth() - 1);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     });
 

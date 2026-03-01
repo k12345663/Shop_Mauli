@@ -25,6 +25,7 @@ export default function OwnerAnalytics() {
 
     useEffect(() => {
         const now = new Date();
+        now.setMonth(now.getMonth() - 1); // Default to previous month
         const month = now.toLocaleString('en-US', { month: 'short', year: 'numeric' });
         setCurrentMonth(month.replace(' ', '-'));
     }, []);
@@ -102,7 +103,7 @@ export default function OwnerAnalytics() {
                 <p>Read-only overview for {currentMonth || '...'}</p>
             </div>
 
-            <div style={{ marginBottom: '24px', maxWidth: '300px', position: 'relative' }}>
+            <div style={{ marginBottom: '24px', maxWidth: '300px', position: 'relative', zIndex: 10 }}>
                 <label className="form-label" style={{ marginBottom: '8px', display: 'block' }}>Select Month</label>
                 <div
                     className="form-input"
