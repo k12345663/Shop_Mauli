@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 
 export default function OwnerAnalytics() {
     const [stats, setStats] = useState({
@@ -36,51 +35,57 @@ export default function OwnerAnalytics() {
 
     async function fetchStats() {
         setLoading(true);
+        try {
+            const res = await fetch(`/api/admin/stats?month=${currentMonth}`);
+            const data = await res.json();
 
-        const [shopRes, renterRes, paymentRes, complexRes] = await Promise.all([
-            supabase.from('shops').select('id', { count: 'exact', head: true }).eq('is_active', true),
-            supabase.from('renters').select('id', { count: 'exact', head: true }),
-            supabase.from('rent_payments')
-                .select('*, renters(renter_code, name)')
-                .eq('period_month', currentMonth)
-                .order('collection_date', { ascending: false }),
-            supabase.from('complexes').select('id, name, shops(id, rent_amount, renter_shops(deposit_amount))')
-        ]);
+            if (res.ok) {
+                const { shops: allShops, renters: allRenters, payments: monthlyPayments, complexes: allComplexes, assignments } = data;
 
-        // Calculate complex-wise stats accurately
-        const complexStats = (complexRes.data || []).map(comp => {
-            const shops = comp.shops || [];
-            const rentPotential = shops.reduce((s, shop) => s + Number(shop.rent_amount || 0), 0);
-            const totalDeposit = shops.reduce((s, shop) => {
-                const dep = shop.renter_shops?.reduce((ds, rs) => ds + Number(rs.deposit_amount || 0), 0) || 0;
-                return s + dep;
-            }, 0);
-            return {
-                name: comp.name,
-                shopCount: shops.length,
-                deposit: totalDeposit,
-                rentPotential
-            };
-        });
+                // 1. Calculate complex-wise stats
+                const complexStats = allComplexes.map(comp => {
+                    const compShops = allShops.filter(s => s.complexId === comp.id);
+                    const rentPotential = compShops.reduce((s, shop) => s + Number(shop.rentAmount || 0), 0);
 
-        const totalPortfolioDeposit = complexStats.reduce((s, c) => s + c.deposit, 0);
-        const totalPortfolioRent = complexStats.reduce((s, c) => s + c.rentPotential, 0);
+                    // Security deposit from assignments
+                    const totalDeposit = assignments
+                        .filter(a => a.shops?.complexId === comp.id)
+                        .reduce((s, a) => s + Number(a.depositAmount || 0), 0);
 
-        setPayments(fetchedPayments);
-        setStats({
-            totalShops: shopRes.count || 0,
-            totalRenters: renterRes.count || 0,
-            totalExpected,
-            totalReceived,
-            totalPortfolioDeposit,
-            totalPortfolioRent,
-            complexStats,
-            paidCount: fetchedPayments.filter(p => p.status === 'paid').length,
-            partialCount: fetchedPayments.filter(p => p.status === 'partial').length,
-            unpaidCount: fetchedPayments.filter(p => p.status === 'unpaid').length,
-        });
+                    return {
+                        name: comp.name,
+                        shopCount: compShops.length,
+                        deposit: totalDeposit,
+                        rentPotential
+                    };
+                });
 
-        setLoading(false);
+                const totalPortfolioDeposit = complexStats.reduce((s, c) => s + c.deposit, 0);
+                const totalPortfolioRent = complexStats.reduce((s, c) => s + c.rentPotential, 0);
+
+                // 2. Calculate monthly collection stats
+                const totalExpected = monthlyPayments.reduce((s, p) => s + Number(p.expectedAmount || 0), 0);
+                const totalReceived = monthlyPayments.reduce((s, p) => s + Number(p.receivedAmount || 0), 0);
+
+                setPayments(monthlyPayments);
+                setStats({
+                    totalShops: allShops.length,
+                    totalRenters: allRenters.length,
+                    totalExpected,
+                    totalReceived,
+                    totalPortfolioDeposit,
+                    totalPortfolioRent,
+                    complexStats,
+                    paidCount: monthlyPayments.filter(p => p.status === 'paid').length,
+                    partialCount: monthlyPayments.filter(p => p.status === 'partial').length,
+                    unpaidCount: monthlyPayments.filter(p => p.status === 'unpaid').length,
+                });
+            }
+        } catch (err) {
+            console.error('Fetch owner stats error:', err);
+        } finally {
+            setLoading(false);
+        }
     }
 
     const pending = stats.totalExpected - stats.totalReceived;
@@ -304,10 +309,10 @@ export default function OwnerAnalytics() {
                                             <tr key={p.id}>
                                                 <td>
                                                     <div style={{ fontWeight: 600 }}>{p.renters?.name}</div>
-                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{p.renters?.renter_code}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{p.renters?.renterCode}</div>
                                                 </td>
-                                                <td style={{ fontWeight: 600 }}>₹{Number(p.received_amount).toLocaleString()}</td>
-                                                <td style={{ fontSize: '0.85rem' }}>{p.collection_date ? new Date(p.collection_date).toLocaleDateString('en-IN') : '—'}</td>
+                                                <td style={{ fontWeight: 600 }}>₹{Number(p.receivedAmount || 0).toLocaleString()}</td>
+                                                <td style={{ fontSize: '0.85rem' }}>{p.collectionDate ? new Date(p.collectionDate).toLocaleDateString('en-IN') : '—'}</td>
                                             </tr>
                                         ))}
                                     </tbody>

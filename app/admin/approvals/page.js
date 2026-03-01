@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import Toast from '@/components/Toast';
 
 export default function ApprovalsPage() {
@@ -14,44 +13,61 @@ export default function ApprovalsPage() {
 
     async function fetchUsers() {
         setLoading(true);
-        const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        const all = data || [];
-        setPending(all.filter(u => !u.is_approved));
-        setApproved(all.filter(u => u.is_approved));
-        setLoading(false);
+        try {
+            const res = await fetch('/api/db/profiles');
+            const data = await res.json();
+            if (res.ok) {
+                const all = data || [];
+                setPending(all.filter(u => !u.isApproved));
+                setApproved(all.filter(u => u.isApproved));
+            }
+        } catch (err) {
+            console.error('Fetch users error:', err);
+        } finally {
+            setLoading(false);
+        }
     }
 
     async function approveUser(id) {
-        const { error } = await supabase
-            .from('profiles')
-            .update({ is_approved: true })
-            .eq('id', id);
-
-        if (error) { setToast({ message: error.message, type: 'error' }); return; }
-        setToast({ message: 'User approved!', type: 'success' });
-        fetchUsers();
+        try {
+            const res = await fetch('/api/db/profiles', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, isApproved: true }),
+            });
+            if (!res.ok) throw new Error('Approval failed');
+            setToast({ message: 'User approved!', type: 'success' });
+            fetchUsers();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
+        }
     }
 
     async function rejectUser(id) {
         if (!confirm('Reject and delete this user account?')) return;
-        // Remove from profiles (cascades from auth.users deletion done via admin)
-        await supabase.from('profiles').delete().eq('id', id);
-        setToast({ message: 'User removed', type: 'success' });
-        fetchUsers();
+        try {
+            const res = await fetch(`/api/db/profiles?id=${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Rejection failed');
+            setToast({ message: 'User removed', type: 'success' });
+            fetchUsers();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
+        }
     }
 
     async function revokeUser(id) {
-        const { error } = await supabase
-            .from('profiles')
-            .update({ is_approved: false })
-            .eq('id', id);
-        if (error) { setToast({ message: error.message, type: 'error' }); return; }
-        setToast({ message: 'Access revoked', type: 'success' });
-        fetchUsers();
+        try {
+            const res = await fetch('/api/db/profiles', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, isApproved: false }),
+            });
+            if (!res.ok) throw new Error('Revocation failed');
+            setToast({ message: 'Access revoked', type: 'success' });
+            fetchUsers();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
+        }
     }
 
     const RoleTag = ({ role }) => {
@@ -106,10 +122,10 @@ export default function ApprovalsPage() {
                             <tbody>
                                 {pending.map(u => (
                                     <tr key={u.id}>
-                                        <td style={{ fontWeight: 600 }}>{u.full_name || '—'}</td>
+                                        <td style={{ fontWeight: 600 }}>{u.fullName || '—'}</td>
                                         <td><RoleTag role={u.role} /></td>
                                         <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                            {new Date(u.created_at).toLocaleDateString('en-IN')}
+                                            {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN') : '—'}
                                         </td>
                                         <td>
                                             <div style={{ display: 'flex', gap: '8px' }}>
@@ -141,10 +157,10 @@ export default function ApprovalsPage() {
                         <tbody>
                             {approved.map(u => (
                                 <tr key={u.id}>
-                                    <td style={{ fontWeight: 600 }}>{u.full_name || '—'}</td>
+                                    <td style={{ fontWeight: 600 }}>{u.fullName || '—'}</td>
                                     <td><RoleTag role={u.role} /></td>
                                     <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                        {new Date(u.created_at).toLocaleDateString('en-IN')}
+                                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN') : '—'}
                                     </td>
                                     <td>
                                         <button className="btn btn-danger btn-sm" onClick={() => revokeUser(u.id)}>🔒 Revoke</button>

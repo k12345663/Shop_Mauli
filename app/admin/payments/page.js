@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import StatusBadge from '@/components/StatusBadge';
 import MonthPicker from '@/components/MonthPicker';
 import jsPDF from 'jspdf';
@@ -35,107 +34,97 @@ export default function PaymentsReport() {
 
     async function fetchPayments() {
         setLoading(true);
+        try {
+            let url = `/api/admin/payments?type=${filterType}`;
+            if (filterType === 'month') url += `&month=${monthFilter}`;
+            else if (filterType === 'range') url += `&startDate=${startDate}&endDate=${endDate}`;
+            else if (filterType === 'day') url += `&specificDate=${specificDate}`;
 
-        // 1. Fetch Recorded Payments
-        let paymentQuery = supabase
-            .from('rent_payments')
-            .select(`
-                *,
-                renters(id, renter_code, name),
-                profiles:collector_user_id(full_name)
-            `);
+            const res = await fetch(url);
+            const data = await res.json();
 
-        if (filterType === 'month') {
-            paymentQuery = paymentQuery.eq('period_month', monthFilter);
-        } else if (filterType === 'range') {
-            if (startDate) paymentQuery = paymentQuery.gte('collection_date', startDate);
-            if (endDate) paymentQuery = paymentQuery.lte('collection_date', endDate);
-        } else if (filterType === 'day') {
-            if (specificDate) paymentQuery = paymentQuery.eq('collection_date', specificDate);
+            if (!res.ok) throw new Error(data.error || 'Failed to fetch payments');
+
+            const { recordedPayments, assignments } = data;
+
+            // 3. Synthesize Full Report
+            const fullReport = [];
+            const paymentMap = {}; // renterId -> payment record
+
+            (recordedPayments || []).forEach(p => {
+                const rId = String(p.renterId || '').toLowerCase();
+                paymentMap[rId] = p;
+            });
+
+            const seenPaymentIds = new Set();
+
+            // Base the report on Assignments (all shops that SHOULD pay)
+            (assignments || []).forEach(asn => {
+                const rId = String(asn.renterId || '').toLowerCase();
+                const payment = paymentMap[rId];
+
+                if (payment) {
+                    // Renter has a payment. Allocate it to this shop row.
+                    const totalRenterRent = assignments
+                        .filter(a => String(a.renterId).toLowerCase() === rId)
+                        .reduce((s, a) => s + Number(a.shops?.rentAmount || 0), 0) || 1;
+
+                    fullReport.push({
+                        ...payment,
+                        id: `${payment.id}-${asn.shopId}`, // Unique ID for table row
+                        expectedAmount: asn.shops?.rentAmount || 0,
+                        receivedAmount: payment.status === 'paid'
+                            ? (asn.shops?.rentAmount || 0)
+                            : (Number(payment.receivedAmount) * (Number(asn.shops?.rentAmount || 0) / totalRenterRent)),
+                        complexName: asn.shops?.complexes?.name || '—',
+                        shopNo: asn.shops?.shopNo || '—',
+                        renterCode: asn.renters?.renterCode || '—',
+                        renterName: asn.renters?.name || '—',
+                        type: 'recorded'
+                    });
+                    seenPaymentIds.add(payment.id);
+                } else if (filterType === 'month') {
+                    // Missing entry for this shop
+                    fullReport.push({
+                        id: `missing-${asn.renterId}-${asn.shopId}`,
+                        renterId: asn.renterId,
+                        shopId: asn.shopId,
+                        periodMonth: monthFilter,
+                        expectedAmount: asn.shops?.rentAmount || 0,
+                        receivedAmount: 0,
+                        status: 'unpaid',
+                        collectionDate: null,
+                        complexName: asn.shops?.complexes?.name || '—',
+                        shopNo: asn.shops?.shopNo || '—',
+                        renterCode: asn.renters?.renterCode || '—',
+                        renterName: asn.renters?.name || '—',
+                        type: 'missing'
+                    });
+                }
+            });
+
+            // Add any recorded payments that DON'T match an active assignment
+            (recordedPayments || []).forEach(p => {
+                if (!seenPaymentIds.has(p.id)) {
+                    fullReport.push({
+                        ...p,
+                        complexName: '—',
+                        shopNo: '—',
+                        renterCode: p.renters?.renterCode || '—',
+                        renterName: p.renters?.name || '—',
+                        type: 'recorded',
+                        expectedAmount: p.expectedAmount,
+                        receivedAmount: p.receivedAmount
+                    });
+                }
+            });
+
+            setPayments(fullReport);
+        } catch (err) {
+            console.error('Fetch payments error:', err);
+        } finally {
+            setLoading(false);
         }
-
-        const { data: recordedPayments } = await paymentQuery.order('collection_date', { ascending: false });
-
-        // 2. Fetch All Active Shop Assignments
-        const { data: assignments } = await supabase
-            .from('renter_shops')
-            .select(`
-                *,
-                renters(id, renter_code, name),
-                shops(id, shop_no, rent_amount, complexes(id, name))
-            `);
-
-        // 3. Synthesize Full Report
-        const fullReport = [];
-        const paymentMap = {}; // renterId -> payment record
-
-        (recordedPayments || []).forEach(p => {
-            const rId = String(p.renter_id || '').toLowerCase();
-            paymentMap[rId] = p;
-        });
-
-        const seenPaymentIds = new Set();
-
-        // Base the report on Assignments (all shops that SHOULD pay)
-        (assignments || []).forEach(asn => {
-            const rId = String(asn.renter_id || '').toLowerCase();
-            const payment = paymentMap[rId];
-
-            if (payment) {
-                // Renter has a payment. Allocate it to this shop row.
-                // We show the same rent status for all shops of this renter.
-                fullReport.push({
-                    ...payment,
-                    id: `${payment.id}-${asn.shop_id}`, // Unique ID for table row
-                    expected_amount: asn.shops?.rent_amount || 0,
-                    // If it's a multi-shop renter, the total received is stored in 'payment.received_amount'.
-                    // For the shop-wise list, we can show the shop's rent if fully paid, or proportional if partial.
-                    received_amount: payment.status === 'paid'
-                        ? (asn.shops?.rent_amount || 0)
-                        : (Number(payment.received_amount) * (Number(asn.shops?.rent_amount || 0) / (assignments.filter(a => String(a.renter_id).toLowerCase() === rId).reduce((s, a) => s + Number(a.shops?.rent_amount || 0), 0) || 1))),
-                    complexName: asn.shops?.complexes?.name || '—',
-                    shopNo: asn.shops?.shop_no || '—',
-                    renterCode: asn.renters?.renter_code || '—',
-                    renterName: asn.renters?.name || '—',
-                    type: 'recorded'
-                });
-                seenPaymentIds.add(payment.id);
-            } else if (filterType === 'month') {
-                // Missing entry for this shop
-                fullReport.push({
-                    id: `missing-${asn.renter_id}-${asn.shop_id}`,
-                    renter_id: asn.renter_id,
-                    shop_id: asn.shop_id,
-                    period_month: monthFilter,
-                    expected_amount: asn.shops?.rent_amount || 0,
-                    received_amount: 0,
-                    status: 'unpaid',
-                    collection_date: null,
-                    complexName: asn.shops?.complexes?.name || '—',
-                    shopNo: asn.shops?.shop_no || '—',
-                    renterCode: asn.renters?.renter_code || '—',
-                    renterName: asn.renters?.name || '—',
-                    type: 'missing'
-                });
-            }
-        });
-
-        // Add any recorded payments that DON'T match an active assignment (orphan records)
-        (recordedPayments || []).forEach(p => {
-            if (!seenPaymentIds.has(p.id)) {
-                fullReport.push({
-                    ...p,
-                    complexName: '—',
-                    shopNo: '—',
-                    renterCode: p.renters?.renter_code || '—',
-                    renterName: p.renters?.name || '—',
-                    type: 'recorded'
-                });
-            }
-        });
-
-        setPayments(fullReport);
-        setLoading(false);
     }
 
     const filtered = payments.filter(p => {
@@ -152,8 +141,8 @@ export default function PaymentsReport() {
         );
     });
 
-    const totalExpected = filtered.reduce((s, p) => s + Number(p.expected_amount), 0);
-    const totalReceived = filtered.reduce((s, p) => s + Number(p.received_amount), 0);
+    const totalExpected = filtered.reduce((s, p) => s + Number(p.expectedAmount || 0), 0);
+    const totalReceived = filtered.reduce((s, p) => s + Number(p.receivedAmount || 0), 0);
 
     const downloadPDF = () => {
         const doc = new jsPDF();
@@ -177,7 +166,7 @@ export default function PaymentsReport() {
 
         // Group filtered payments by complex
         filtered.forEach(p => {
-            const complexNames = [...new Set(p.renters?.renter_shops?.map(rs => rs.shops?.complexes?.name) || [])].join(', ') || 'Unassigned';
+            const complexNames = p.complexName || 'Unassigned';
             if (!groups[complexNames]) groups[complexNames] = [];
             groups[complexNames].push(p);
         });
@@ -191,12 +180,12 @@ export default function PaymentsReport() {
                     p.renterCode,
                     p.renterName,
                     p.shopNo,
-                    `Rs. ${Number(p.expected_amount).toLocaleString()}`,
-                    `Rs. ${Number(p.received_amount).toLocaleString()}`,
+                    `Rs. ${Number(p.expectedAmount || 0).toLocaleString()}`,
+                    `Rs. ${Number(p.receivedAmount || 0).toLocaleString()}`,
                     p.status.toUpperCase(),
-                    p.collection_date
-                        ? new Date(p.collection_date).toLocaleDateString('en-IN')
-                        : (p.period_month || '—')
+                    p.collectionDate
+                        ? new Date(p.collectionDate).toLocaleDateString('en-IN')
+                        : (p.periodMonth || '—')
                 ]);
             });
         });
@@ -371,13 +360,13 @@ export default function PaymentsReport() {
                                         </td>
                                         <td style={{ fontWeight: 500 }}>{p.renterName}</td>
                                         <td style={{ fontWeight: 600 }}>{p.shopNo}</td>
-                                        <td style={{ color: 'var(--text-secondary)' }}>₹{Number(p.expected_amount).toLocaleString()}</td>
-                                        <td style={{ fontWeight: 700 }}>₹{Number(p.received_amount).toLocaleString()}</td>
+                                        <td style={{ color: 'var(--text-secondary)' }}>₹{Number(p.expectedAmount || 0).toLocaleString()}</td>
+                                        <td style={{ fontWeight: 700 }}>₹{Number(p.receivedAmount || 0).toLocaleString()}</td>
                                         <td><StatusBadge status={p.status} /></td>
                                         <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                            {p.collection_date
-                                                ? new Date(p.collection_date).toLocaleDateString('en-IN')
-                                                : p.period_month}
+                                            {p.collectionDate
+                                                ? new Date(p.collectionDate).toLocaleDateString('en-IN')
+                                                : p.periodMonth}
                                         </td>
                                     </tr>
                                 );

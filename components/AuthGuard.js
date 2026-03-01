@@ -1,65 +1,44 @@
-'use client';
-
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { useSession, signOut } from 'next-auth/react';
 
 export default function AuthGuard({ children, allowedRoles }) {
     const router = useRouter();
-    const [loading, setLoading] = useState(true);
+    const { data: session, status: authStatus } = useSession();
     const [status, setStatus] = useState('checking'); // checking | authorized | pending | unauthorized
 
     useEffect(() => {
-        checkAuth();
-    }, []);
+        if (authStatus === 'loading') return;
 
-    async function checkAuth() {
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
-                router.push('/login');
-                return;
-            }
+        if (authStatus === 'unauthenticated') {
+            router.push('/login');
+            return;
+        }
 
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('role, is_approved')
-                .eq('id', user.id)
-                .single();
-
-            if (!profile) {
-                router.push('/login');
-                return;
-            }
+        if (session?.user) {
+            const profile = session.user; // We'll map role/isApproved to user object in JWT callback
 
             // Wrong role — redirect to correct dashboard
-            if (!allowedRoles.includes(profile.role)) {
+            if (allowedRoles && !allowedRoles.includes(profile.role)) {
                 router.push(`/${profile.role}`);
                 return;
             }
 
             // Correct role but not approved yet
-            if (!profile.is_approved) {
+            if (profile.is_approved === false) {
                 setStatus('pending');
-                setLoading(false);
                 return;
             }
 
             setStatus('authorized');
-        } catch (err) {
-            console.error('Auth check failed:', err);
-            router.push('/login');
-        } finally {
-            setLoading(false);
         }
-    }
+    }, [session, authStatus, router, allowedRoles]);
 
     async function handleLogout() {
-        await supabase.auth.signOut();
-        router.push('/login');
+        await signOut({ callbackUrl: '/login' });
     }
 
-    if (loading) {
+    if (authStatus === 'loading' || status === 'checking') {
         return (
             <div className="loading-page">
                 <div className="spinner"></div>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 
 export default function LoginPage() {
@@ -18,44 +18,24 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
-            if (typeof window !== 'undefined') {
-                console.log('Supabase instance URL:', supabase.supabaseUrl);
-            }
-            console.log('Attempting login for:', email);
-            const { data, error: authError } = await supabase.auth.signInWithPassword({
+            const res = await signIn('credentials', {
                 email,
                 password,
+                redirect: false,
             });
 
-            if (authError) {
-                console.error('Auth Error:', authError.message);
-                throw authError;
-            }
-
-            console.log('Auth success, fetching profile for ID:', data.user.id);
-            const { data: profile, error: profileError } = await supabase
-                .from('profiles')
-                .select('role, is_approved')
-                .eq('id', data.user.id)
-                .single();
-
-            if (profileError) {
-                console.error('Profile Fetch Error:', profileError.message);
-                setError('Login succeeded but your profile was not found. Please sign up again.');
+            if (res?.error) {
+                setError('Invalid email or password');
                 return;
             }
 
-            if (!profile.is_approved) {
-                setError('Your account is pending approval by the owner.');
-                return;
-            }
-
-            console.log('Login successful! Role:', profile.role);
-            const targetPath = profile.role === 'owner' ? '/admin' : `/${profile.role}`;
-            router.push(targetPath);
+            // Successful login — redirect handled by refresh or session update
+            // We'll just push to the root which AuthGuard will then redirect based on role
+            router.push('/');
+            router.refresh();
         } catch (err) {
             console.error('Login Process Error:', err);
-            setError(err.message || 'Login failed. Please check your credentials.');
+            setError('Login failed. Please check your credentials.');
         } finally {
             setLoading(false);
         }

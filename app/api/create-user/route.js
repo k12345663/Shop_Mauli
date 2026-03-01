@@ -1,17 +1,8 @@
-import { createClient } from '@supabase/supabase-js';
+import { db } from "@/lib/db";
+import { profiles, users } from "@/lib/db/schema";
 import { NextResponse } from 'next/server';
-
-// Admin client getter — server side only
-function getSupabaseAdmin() {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zuzywkrkboumsvebnkzz.supabase.co';
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1enl3a3JrYm91bXN2ZWJua3p6Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTY4NjY5MywiZXhwIjoyMDg3MjYyNjkzfQ._5vza7YcJHTxsXuw6loatsE42tQLrXMNjyOY_X_SRw4';
-
-    if (!url || !key) {
-        throw new Error('Supabase URL or Service Role Key is missing');
-    }
-
-    return createClient(url, key);
-}
+import bcrypt from "bcryptjs";
+import { eq } from "drizzle-orm";
 
 export async function POST(request) {
     try {
@@ -21,29 +12,27 @@ export async function POST(request) {
             return NextResponse.json({ error: 'All fields are required' }, { status: 400 });
         }
 
-        const supabaseAdmin = getSupabaseAdmin();
-        // Create user in Supabase Auth using admin API
-        const { data, error: createError } = await supabaseAdmin.auth.admin.createUser({
-            email,
-            password,
-            email_confirm: true,   // auto-confirm email
-            user_metadata: { full_name: fullName, role },
-        });
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-        if (createError) {
-            return NextResponse.json({ error: createError.message }, { status: 400 });
-        }
+        // 1. Create User in NextAuth record
+        const [newUser] = await db.insert(users).values({
+            name: fullName,
+            email: email,
+        }).returning();
 
-        // Ensure profile row exists and is approved
-        await supabaseAdmin.from('profiles').upsert({
-            id: data.user.id,
-            full_name: fullName,
+        // 2. Create Profile row
+        await db.insert(profiles).values({
+            id: newUser.id,
+            email: email,
+            password: hashedPassword,
+            fullName,
             role,
-            is_approved: true,
+            isApproved: true,
         });
 
-        return NextResponse.json({ success: true, userId: data.user.id });
+        return NextResponse.json({ success: true, userId: newUser.id });
     } catch (err) {
+        console.error('Create user error:', err);
         return NextResponse.json({ error: err.message }, { status: 500 });
     }
 }
@@ -51,17 +40,11 @@ export async function POST(request) {
 export async function DELETE(request) {
     try {
         const { userId } = await request.json();
-        const supabaseAdmin = getSupabaseAdmin();
 
-        // 1. Delete from Auth
-        const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId);
-        if (authError) return NextResponse.json({ error: authError.message }, { status: 400 });
-
-        // 2. Delete from Profiles (fallback, though ON DELETE CASCADE should handle it)
-        const { error: profileError } = await supabaseAdmin.from('profiles').delete().eq('id', userId);
-        if (profileError) {
-            console.error('Profile deletion error:', profileError.message);
-        }
+        // Delete from profiles (which should cascade from user if configured)
+        // or delete manually if not
+        await db.delete(profiles).where(eq(profiles.id, userId));
+        await db.delete(users).where(eq(users.id, userId));
 
         return NextResponse.json({ success: true });
     } catch (err) {

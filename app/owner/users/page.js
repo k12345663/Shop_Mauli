@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import Toast from '@/components/Toast';
 
 const ROLES = [
@@ -22,12 +21,17 @@ export default function ManageUsersPage() {
 
     async function fetchUsers() {
         setLoading(true);
-        const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .order('created_at', { ascending: false });
-        setUsers(data || []);
-        setLoading(false);
+        try {
+            const res = await fetch('/api/users');
+            const data = await res.json();
+            if (res.ok) {
+                setUsers(data || []);
+            }
+        } catch (err) {
+            console.error('Fetch users error:', err);
+        } finally {
+            setLoading(false);
+        }
     }
 
     async function handleCreate(e) {
@@ -58,7 +62,7 @@ export default function ManageUsersPage() {
     }
 
     async function handleDelete(user) {
-        if (!confirm(`Delete account for "${user.full_name}"? This cannot be undone.`)) return;
+        if (!confirm(`Delete account for "${user.fullName}"? This cannot be undone.`)) return;
         const res = await fetch('/api/create-user', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
@@ -158,11 +162,11 @@ export default function ManageUsersPage() {
                         ) : users.map(u => (
                             <tr key={u.id}>
                                 <td>
-                                    <div style={{ fontWeight: 600 }}>{u.full_name || '—'}</div>
+                                    <div style={{ fontWeight: 600 }}>{u.fullName || '—'}</div>
                                 </td>
                                 <td><RoleTag role={u.role} /></td>
                                 <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-                                    {new Date(u.created_at).toLocaleDateString('en-IN')}
+                                    {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN') : '—'}
                                 </td>
                                 <td>
                                     <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)}>

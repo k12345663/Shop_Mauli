@@ -1,60 +1,55 @@
-'use client';
-
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { useSession, signOut } from 'next-auth/react';
 import Link from 'next/link';
 
 const NAV_ITEMS = {
   admin: [
     { href: '/admin', label: 'Dashboard', icon: '📊' },
     { href: '/admin/shops', label: 'Manage Shops', icon: '🏪' },
-    { href: '/admin/renters', label: 'Manage Renters', icon: '👤' },
+    { href: '/admin/renters', label: 'Manage Renters', icon: '👥' },
     { href: '/admin/assign', label: 'Assign Shops', icon: '🔗' },
-    { href: '/admin/payments', label: 'Payments Report', icon: '💰' },
-    { href: '/admin/approvals', label: 'User Approvals', icon: '✅' },
-    { href: '/admin/users', label: 'Manage Users', icon: '👥' },
+    { href: '/admin/payments', label: 'View Records', icon: '💰' },
+    { href: '/admin/approvals', label: 'Approvals', icon: '✅' },
+    { href: '/admin/users', label: 'Users', icon: '👤' },
   ],
   collector: [
     { href: '/collector', label: 'Search Renter', icon: '🔍' },
-    { href: '/collector/history', label: 'Collection History', icon: '📋' },
+    { href: '/collector/collect', label: 'Collect Rent', icon: '💵' },
+    { href: '/collector/advance', label: 'Advance Pay', icon: '⚡' },
+    { href: '/collector/history', label: 'My History', icon: '📋' },
+    { href: '/collector/deposits', label: 'Deposits', icon: '🏦' },
+    { href: '/collector/reports', label: 'Reports', icon: '📊' },
   ],
   owner: [
-    { href: '/admin', label: 'Dashboard', icon: '📊' },
-    { href: '/admin/shops', label: 'Manage Shops', icon: '🏪' },
-    { href: '/admin/renters', label: 'Manage Renters', icon: '👤' },
-    { href: '/admin/assign', label: 'Assign Shops', icon: '🔗' },
-    { href: '/admin/payments', label: 'Payments Report', icon: '💰' },
-    { href: '/admin/approvals', label: 'User Approvals', icon: '✅' },
-    { href: '/admin/users', label: 'Manage Users', icon: '👥' },
     { href: '/owner', label: 'Analytics', icon: '📈' },
+    { href: '/admin/shops', label: 'Manage Shops', icon: '🏪' },
+    { href: '/admin/renters', label: 'Manage Renters', icon: '👥' },
+    { href: '/admin/assign', label: 'Assign Shops', icon: '🔗' },
+    { href: '/admin/payments', label: 'View Records', icon: '💰' },
+    { href: '/owner/approvals', label: 'Approvals', icon: '✅' },
+    { href: '/owner/users', label: 'Users', icon: '👤' },
   ],
   dba: [
     { href: '/admin', label: 'Dashboard', icon: '📊' },
     { href: '/admin/shops', label: 'Manage Shops', icon: '🏪' },
-    { href: '/admin/renters', label: 'Manage Renters', icon: '👤' },
+    { href: '/admin/renters', label: 'Manage Renters', icon: '👥' },
     { href: '/admin/assign', label: 'Assign Shops', icon: '🔗' },
-    { href: '/admin/payments', label: 'Payments Report', icon: '💰' },
-    { href: '/admin/approvals', label: 'User Approvals', icon: '✅' },
-    { href: '/admin/users', label: 'Manage Users', icon: '👥' },
+    { href: '/admin/payments', label: 'View Records', icon: '💰' },
   ],
 };
 
 export default function Sidebar({ role }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState(null);
+  const { data: session } = useSession();
+  const user = session?.user;
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const items = NAV_ITEMS[role] || [];
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data?.user));
-  }, []);
-
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
+    await signOut({ callbackUrl: '/login' });
   };
 
   return (

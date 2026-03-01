@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
 
 export default function AdminDashboard() {
     const [stats, setStats] = useState({
@@ -34,110 +33,113 @@ export default function AdminDashboard() {
     async function fetchStats() {
         setLoading(true);
 
-        const [shopRes, renterRes, paymentRes, complexRes, renterShopAssignmentsRes] = await Promise.all([
-            supabase.from('shops').select('id, rent_amount, complex_id', { count: 'exact' }).eq('is_active', true),
-            supabase.from('renters').select('id', { count: 'exact', head: true }),
-            supabase.from('rent_payments').select('*').eq('period_month', currentMonth),
-            supabase.from('complexes').select('id, name, shops(id, rent_amount, renter_shops(deposit_amount))'),
-            supabase.from('renter_shops').select('*, renters(id, name, renter_code), shops(shop_no, complexes(name))')
-        ]);
+        try {
+            const res = await fetch(`/api/admin/stats?month=${currentMonth}`);
+            const data = await res.json();
 
-        const payments = paymentRes.data || [];
-        const totalReceived = payments.reduce((s, p) => s + Number(p.received_amount), 0);
+            if (!res.ok) throw new Error(data.error);
 
-        // Calculate complex-wise stats accurately
-        const complexStats = (complexRes.data || []).map(comp => {
-            const shops = comp.shops || [];
-            const rentPotential = shops.reduce((s, shop) => s + Number(shop.rent_amount || 0), 0);
-            const totalDeposit = shops.reduce((s, shop) => {
-                const dep = shop.renter_shops?.reduce((ds, rs) => ds + Number(rs.deposit_amount || 0), 0) || 0;
-                return s + dep;
-            }, 0);
-            return {
-                name: comp.name,
-                shopCount: shops.length,
-                deposit: totalDeposit,
-                rentPotential
-            };
-        });
+            const { shops: shopsData, renters: rentersData, payments, complexes: complexesData, assignments } = data;
+            const totalReceived = payments.reduce((s, p) => s + Number(p.receivedAmount), 0);
 
-        // Calculate Defaulters
-        const assignments = renterShopAssignmentsRes.data || [];
+            // Calculate complex-wise stats accurately
+            // Mapping complexes with shops and assignments manually from the API response
+            const complexStats = complexesData.map(comp => {
+                const compShops = shopsData.filter(s => s.complexId === comp.id);
+                const rentPotential = compShops.reduce((s, shop) => s + Number(shop.rentAmount || 0), 0);
 
-        // Group assignments by renter
-        const renterMap = {};
-        assignments.forEach(asn => {
-            if (!asn.renters) return;
-            if (!renterMap[asn.renters.id]) {
-                renterMap[asn.renters.id] = {
-                    id: asn.renters.id,
-                    name: asn.renters.name,
-                    code: asn.renters.renter_code,
-                    shops: [],
-                    totalRent: 0
+                const totalDeposit = compShops.reduce((s, shop) => {
+                    const shopAssignments = assignments.filter(a => a.shopId === shop.id);
+                    const dep = shopAssignments.reduce((ds, rs) => ds + Number(rs.depositAmount || 0), 0);
+                    return s + dep;
+                }, 0);
+
+                return {
+                    name: comp.name,
+                    shopCount: compShops.length,
+                    deposit: totalDeposit,
+                    rentPotential
                 };
-            }
-            renterMap[asn.renters.id].shops.push(asn.shops?.shop_no);
-            renterMap[asn.renters.id].totalRent += Number(asn.shops?.rent_amount || 0);
-        });
+            });
 
-        const paymentList = [];
-        Object.values(renterMap).forEach(renter => {
-            const payment = payments.find(p => String(p.renter_id || '').toLowerCase() === String(renter.id || '').toLowerCase());
-            if (!payment) {
-                paymentList.push({
-                    name: renter.name,
-                    code: renter.code,
-                    shops: renter.shops.join(', '),
-                    status: 'Unpaid',
-                    pending: renter.totalRent,
-                    severity: 3
-                });
-            } else if (payment.status === 'partial') {
-                paymentList.push({
-                    name: renter.name,
-                    code: renter.code,
-                    shops: renter.shops.join(', '),
-                    status: 'Partial',
-                    pending: Number(payment.expected_amount) - Number(payment.received_amount),
-                    severity: 2
-                });
-            } else {
-                paymentList.push({
-                    name: renter.name,
-                    code: renter.code,
-                    shops: renter.shops.join(', '),
-                    status: 'Paid',
-                    pending: 0,
-                    severity: 1
-                });
-            }
-        });
+            // Calculate Defaulters
+            // Group assignments by renter
+            const renterMap = {};
+            assignments.forEach(asn => {
+                if (!asn.renters) return;
+                if (!renterMap[asn.renters.id]) {
+                    renterMap[asn.renters.id] = {
+                        id: asn.renters.id,
+                        name: asn.renters.name,
+                        code: asn.renters.renterCode,
+                        shops: [],
+                        totalRent: 0
+                    };
+                }
+                renterMap[asn.renters.id].shops.push(asn.shops?.shopNo);
+                renterMap[asn.renters.id].totalRent += Number(asn.shops?.rentAmount || 0);
+            });
 
-        // Sort: Unpaid (3) > Partial (2) > Paid (1). Then by pending amount.
-        paymentList.sort((a, b) => {
-            if (a.severity !== b.severity) return b.severity - a.severity;
-            return b.pending - a.pending;
-        });
+            const paymentList = [];
+            Object.values(renterMap).forEach(renter => {
+                const payment = payments.find(p => String(p.renterId || '').toLowerCase() === String(renter.id || '').toLowerCase());
+                if (!payment) {
+                    paymentList.push({
+                        name: renter.name,
+                        code: renter.code,
+                        shops: renter.shops.join(', '),
+                        status: 'Unpaid',
+                        pending: renter.totalRent,
+                        severity: 3
+                    });
+                } else if (payment.status === 'partial') {
+                    paymentList.push({
+                        name: renter.name,
+                        code: renter.code,
+                        shops: renter.shops.join(', '),
+                        status: 'Partial',
+                        pending: Number(payment.expectedAmount) - Number(payment.receivedAmount),
+                        severity: 2
+                    });
+                } else {
+                    paymentList.push({
+                        name: renter.name,
+                        code: renter.code,
+                        shops: renter.shops.join(', '),
+                        status: 'Paid',
+                        pending: 0,
+                        severity: 1
+                    });
+                }
+            });
 
-        const totalPortfolioDeposit = complexStats.reduce((s, c) => s + c.deposit, 0);
-        const totalPortfolioRent = complexStats.reduce((s, c) => s + c.rentPotential, 0);
+            // Sort: Unpaid (3) > Partial (2) > Paid (1). Then by pending amount.
+            paymentList.sort((a, b) => {
+                if (a.severity !== b.severity) return b.severity - a.severity;
+                return b.pending - a.pending;
+            });
 
-        setStats({
-            totalShops: shopRes.count || 0,
-            totalRenters: renterRes.count || 0,
-            totalExpected: totalPortfolioRent,
-            totalReceived,
-            totalPortfolioDeposit,
-            totalPortfolioRent,
-            complexStats,
-            paymentList,
-            paidCount: payments.filter(p => p.status === 'paid').length,
-            partialCount: payments.filter(p => p.status === 'partial').length,
-            unpaidCount: payments.filter(p => p.status === 'unpaid').length,
-        });
+            const totalPortfolioDeposit = complexStats.reduce((s, c) => s + c.deposit, 0);
+            const totalPortfolioRent = complexStats.reduce((s, c) => s + c.rentPotential, 0);
 
-        setLoading(false);
+            setStats({
+                totalShops: shopsData.length,
+                totalRenters: rentersData.length,
+                totalExpected: totalPortfolioRent,
+                totalReceived,
+                totalPortfolioDeposit,
+                totalPortfolioRent,
+                complexStats,
+                paymentList,
+                paidCount: payments.filter(p => p.status === 'paid').length,
+                partialCount: payments.filter(p => p.status === 'partial').length,
+                unpaidCount: payments.filter(p => p.status === 'unpaid').length,
+            });
+        } catch (err) {
+            console.error('Fetch stats error:', err);
+        } finally {
+            setLoading(false);
+        }
     }
 
     const pending = stats.totalExpected - stats.totalReceived;

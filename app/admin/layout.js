@@ -1,25 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import AuthGuard from '@/components/AuthGuard';
 import Sidebar from '@/components/Sidebar';
-import { supabase } from '@/lib/supabase';
 
 export default function AdminLayout({ children }) {
-    const [role, setRole] = useState('admin');
-
-    useEffect(() => {
-        supabase.auth.getUser().then(async ({ data: { user } }) => {
-            if (user) {
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('role')
-                    .eq('id', user.id)
-                    .single();
-                if (profile) setRole(profile.role);
-            }
-        });
-    }, []);
+    const { data: session } = useSession();
+    const role = session?.user?.role || 'admin';
 
     return (
         <AuthGuard allowedRoles={['admin', 'owner', 'dba']}>

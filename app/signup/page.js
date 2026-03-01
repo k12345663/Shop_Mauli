@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 
 export default function SignupPage() {
@@ -20,24 +20,28 @@ export default function SignupPage() {
         setLoading(true);
 
         try {
-            const { data, error: authError } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: { full_name: fullName, role },
-                },
+            const res = await fetch('/api/signup', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password, fullName, role }),
             });
 
-            if (authError) throw authError;
+            if (!res.ok) {
+                const data = await res.json();
+                throw new Error(data.error || 'Signup failed');
+            }
 
-            // If email confirmation is off, user is auto-logged-in
-            // DB trigger handles profile creation automatically
-            if (data.user) {
-                // Brief delay to let the trigger complete
-                await new Promise(r => setTimeout(r, 600));
-                router.push(`/${role}`);
+            // After signup, automatically sign them in
+            const authRes = await signIn('credentials', {
+                email,
+                password,
+                redirect: false,
+            });
+
+            if (authRes?.error) {
+                router.push('/login');
             } else {
-                setError('Check your email for a confirmation link.');
+                router.push('/');
             }
         } catch (err) {
             setError(err.message || 'Signup failed');

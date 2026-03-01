@@ -2,36 +2,28 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+import { useSession } from 'next-auth/react';
 
 export default function Home() {
     const router = useRouter();
+    const { data: session, status } = useSession();
 
     useEffect(() => {
-        checkUserAndRedirect();
-    }, []);
+        if (status === 'loading') return;
 
-    async function checkUserAndRedirect() {
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
+        if (status === 'unauthenticated' || !session) {
             router.push('/login');
             return;
         }
 
-        const { data: profile } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', user.id)
-            .single();
-
-        if (profile) {
-            const targetPath = profile.role === 'owner' ? '/admin' : `/${profile.role}`;
+        const user = session.user;
+        if (user) {
+            const targetPath = user.role === 'owner' ? '/admin' : `/${user.role}`;
             router.push(targetPath);
         } else {
             router.push('/login');
         }
-    }
+    }, [session, status, router]);
 
     return (
         <div className="loading-page">

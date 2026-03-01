@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import Toast from '@/components/Toast';
 
 export default function ManageRenters() {
@@ -9,7 +8,7 @@ export default function ManageRenters() {
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [editingRenter, setEditingRenter] = useState(null);
-    const [form, setForm] = useState({ renter_code: '', name: '', phone: '' });
+    const [form, setForm] = useState({ renterCode: '', name: '', phone: '' });
     const [toast, setToast] = useState(null);
     const [search, setSearch] = useState('');
 
@@ -17,88 +16,120 @@ export default function ManageRenters() {
 
     async function fetchRenters() {
         setLoading(true);
-        const { data } = await supabase
-            .from('renters')
-            .select('*, renter_shops(shop_id, deposit_amount, shops(shop_no, complex_id, complexes(name), rent_amount))')
-            .order('renter_code', { ascending: true });
-        setRenters(data || []);
-        setLoading(false);
+        try {
+            const res = await fetch('/api/admin/renters');
+            const data = await res.json();
+            if (res.ok) setRenters(data);
+        } catch (err) {
+            console.error('Fetch renters error:', err);
+        } finally {
+            setLoading(false);
+        }
     }
 
     function openAdd() {
         setEditingRenter(null);
-        setForm({ renter_code: '', name: '', phone: '' });
+        setForm({ renterCode: '', name: '', phone: '' });
         setShowModal(true);
     }
 
     function openEdit(renter) {
         setEditingRenter(renter);
-        setForm({ renter_code: renter.renter_code, name: renter.name, phone: renter.phone || '' });
+        setForm({ renterCode: renter.renterCode, name: renter.name, phone: renter.phone || '' });
         setShowModal(true);
     }
 
     async function handleSave(e) {
         e.preventDefault();
         const payload = {
-            renter_code: form.renter_code.trim(),
+            renterCode: form.renterCode.trim(),
             name: form.name.trim(),
             phone: form.phone.trim(),
         };
 
-        if (editingRenter) {
-            const { error } = await supabase.from('renters').update(payload).eq('id', editingRenter.id);
-            if (error) { setToast({ message: error.message, type: 'error' }); return; }
-            setToast({ message: 'Renter updated', type: 'success' });
-        } else {
-            const { error } = await supabase.from('renters').insert(payload);
-            if (error) { setToast({ message: error.message, type: 'error' }); return; }
-            setToast({ message: 'Renter added', type: 'success' });
+        try {
+            if (editingRenter) {
+                const res = await fetch('/api/db/renters', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: editingRenter.id, ...payload }),
+                });
+                if (!res.ok) throw new Error('Update failed');
+                setToast({ message: 'Renter updated', type: 'success' });
+            } else {
+                const res = await fetch('/api/db/renters', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) throw new Error('Create failed');
+                setToast({ message: 'Renter added', type: 'success' });
+            }
+            setShowModal(false);
+            fetchRenters();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
         }
-
-        setShowModal(false);
-        fetchRenters();
     }
 
     async function updateShopRent(id, amount) {
         if (!amount || isNaN(amount)) return;
         setLoading(true);
-        const { error } = await supabase.from('shops').update({ rent_amount: parseFloat(amount) }).eq('id', id);
-        if (error) {
-            setToast({ message: error.message, type: 'error' });
-        } else {
+        try {
+            const res = await fetch('/api/db/shops', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, rentAmount: amount.toString() }),
+            });
+            if (!res.ok) throw new Error('Update failed');
             setToast({ message: 'Rent amount updated', type: 'success' });
             fetchRenters();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     }
 
     async function updateShopDeposit(renterId, shopId, amount) {
         if (!amount || isNaN(amount)) return;
         setLoading(true);
-        const { error } = await supabase
-            .from('renter_shops')
-            .update({ deposit_amount: parseFloat(amount) })
-            .match({ renter_id: renterId, shop_id: shopId });
+        try {
+            // Need a way to update renter_shop by composite key or ID
+            // Since our generic API uses ID, we might need a specific route or find the ID first.
+            // For now, I'll assume we have the ID or can find it.
+            const renter = renters.find(r => r.id === renterId);
+            const rs = renter.renterShops.find(rs => rs.shopId === shopId);
 
-        if (error) {
-            setToast({ message: error.message, type: 'error' });
-        } else {
+            const res = await fetch('/api/db/renterShops', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: rs.id, depositAmount: amount.toString() }),
+            });
+            if (!res.ok) throw new Error('Update failed');
             setToast({ message: 'Deposit amount updated', type: 'success' });
             fetchRenters();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
+        } finally {
+            setLoading(false);
         }
-        setLoading(false);
     }
 
     async function handleDelete(id) {
         if (!confirm('Delete this renter and all their shop assignments?')) return;
-        const { error } = await supabase.from('renters').delete().eq('id', id);
-        if (error) { setToast({ message: error.message, type: 'error' }); return; }
-        setToast({ message: 'Renter deleted', type: 'success' });
-        fetchRenters();
+        try {
+            const res = await fetch(`/api/db/renters?id=${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Delete failed');
+            setToast({ message: 'Renter deleted', type: 'success' });
+            fetchRenters();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
+        }
     }
 
     const filtered = renters.filter(r =>
-        r.renter_code.toLowerCase().includes(search.toLowerCase()) ||
+        r.renterCode.toLowerCase().includes(search.toLowerCase()) ||
         r.name.toLowerCase().includes(search.toLowerCase())
     );
 
@@ -148,22 +179,22 @@ export default function ManageRenters() {
                             {filtered.map((renter) => {
                                 return (
                                     <tr key={renter.id}>
-                                        <td style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>{renter.renter_code}</td>
+                                        <td style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>{renter.renterCode}</td>
                                         <td>{renter.name}</td>
                                         <td style={{ color: 'var(--text-secondary)' }}>{renter.phone || '—'}</td>
                                         <td>
                                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                                                {renter.renter_shops?.length > 0 ? renter.renter_shops.map(rs => (
-                                                    <div key={rs.shops?.shop_no} className="shop-tag" style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '6px 10px' }}>
-                                                        <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{rs.shops?.complexes?.name || '—'} - {rs.shops?.shop_no}</div>
-                                                        <div style={{ fontSize: '0.75rem', opacity: 0.9 }}>Rent: ₹{Number(rs.shops?.rent_amount || 0).toLocaleString()}</div>
-                                                        <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Deposit: ₹{Number(rs.deposit_amount || 0).toLocaleString()}</div>
+                                                {renter.renterShops?.length > 0 ? renter.renterShops.map(rs => (
+                                                    <div key={rs.shops?.shopNo} className="shop-tag" style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '6px 10px' }}>
+                                                        <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{rs.shops?.complexes?.name || '—'} - {rs.shops?.shopNo}</div>
+                                                        <div style={{ fontSize: '0.75rem', opacity: 0.9 }}>Rent: ₹{Number(rs.shops?.rentAmount || 0).toLocaleString()}</div>
+                                                        <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>Deposit: ₹{Number(rs.depositAmount || 0).toLocaleString()}</div>
                                                     </div>
                                                 )) : <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>None</span>}
                                             </div>
                                         </td>
                                         <td style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                                            ₹{(renter.renter_shops?.reduce((sum, rs) => sum + Number(rs.shops?.rent_amount || 0), 0) || 0).toLocaleString()}
+                                            ₹{(renter.renterShops?.reduce((sum, rs) => sum + Number(rs.shops?.rentAmount || 0), 0) || 0).toLocaleString()}
                                         </td>
                                         <td>
                                             <div style={{ display: 'flex', gap: '8px' }}>
@@ -193,8 +224,8 @@ export default function ManageRenters() {
                                 <input
                                     className="form-input"
                                     placeholder="e.g. R001"
-                                    value={form.renter_code}
-                                    onChange={(e) => setForm({ ...form, renter_code: e.target.value })}
+                                    value={form.renterCode}
+                                    onChange={(e) => setForm({ ...form, renterCode: e.target.value })}
                                     required
                                 />
                             </div>
@@ -218,14 +249,14 @@ export default function ManageRenters() {
                                 />
                             </div>
 
-                            {editingRenter && editingRenter.renter_shops?.length > 0 && (
+                            {editingRenter && editingRenter.renterShops?.length > 0 && (
                                 <div style={{ marginTop: '24px', borderTop: '1px solid var(--border-color)', paddingTop: '20px' }}>
                                     <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '16px' }}>Assigned Shop Rents</h3>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                                        {editingRenter.renter_shops.map(rs => (
-                                            <div key={rs.shops?.shop_no} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-primary)', padding: '10px', borderRadius: 'var(--radius-md)' }}>
+                                        {editingRenter.renterShops.map(rs => (
+                                            <div key={rs.shops?.shopNo} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-primary)', padding: '10px', borderRadius: 'var(--radius-md)' }}>
                                                 <div style={{ minWidth: '90px' }}>
-                                                    <div style={{ fontWeight: 700 }}>{rs.shops?.shop_no}</div>
+                                                    <div style={{ fontWeight: 700 }}>{rs.shops?.shopNo}</div>
                                                     <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{rs.shops?.complexes?.name || '—'}</div>
                                                 </div>
                                                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -235,8 +266,8 @@ export default function ManageRenters() {
                                                             type="number"
                                                             className="form-input"
                                                             style={{ padding: '4px 8px', fontSize: '0.9rem' }}
-                                                            defaultValue={rs.shops?.rent_amount}
-                                                            onBlur={(e) => updateShopRent(rs.shop_id, e.target.value)}
+                                                            defaultValue={rs.shops?.rentAmount}
+                                                            onBlur={(e) => updateShopRent(rs.shopId, e.target.value)}
                                                         />
                                                     </div>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -245,8 +276,8 @@ export default function ManageRenters() {
                                                             type="number"
                                                             className="form-input"
                                                             style={{ padding: '4px 8px', fontSize: '0.9rem' }}
-                                                            defaultValue={rs.deposit_amount}
-                                                            onBlur={(e) => updateShopDeposit(editingRenter.id, rs.shop_id, e.target.value)}
+                                                            defaultValue={rs.depositAmount}
+                                                            onBlur={(e) => updateShopDeposit(editingRenter.id, rs.shopId, e.target.value)}
                                                         />
                                                     </div>
                                                 </div>

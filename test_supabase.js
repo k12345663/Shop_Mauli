@@ -19,5 +19,5 @@ const key = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZi
 
 (async () => {
     await testConnection('https://zuzywkrkboumsvebnkzz.supabase.co', key);
-    await testConnection('https://zuzywkrkboumvebnkzz.supabase.co', key);
+    await testConnection('https://zuzywkrkboumsvebnkzz.supabase.co', key);
 })();

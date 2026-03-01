@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import Toast from '@/components/Toast';
 
 export default function ManageShops() {
@@ -20,21 +19,29 @@ export default function ManageShops() {
     }, []);
 
     async function fetchComplexes() {
-        const { data } = await supabase.from('complexes').select('*').order('name');
-        setComplexes(data || []);
+        try {
+            const res = await fetch('/api/db/complexes');
+            const data = await res.json();
+            if (res.ok) setComplexes(data || []);
+        } catch (err) {
+            console.error('Fetch complexes error:', err);
+        }
     }
 
     async function fetchShops() {
         setLoading(true);
-        const { data } = await supabase
-            .from('shops')
-            .select('*, complexes(id, name), renter_shops(renters(name))')
-            .order('shop_no', { ascending: true });
-        setShops(data || []);
-        setLoading(false);
+        try {
+            const res = await fetch('/api/admin/shops');
+            const data = await res.json();
+            if (res.ok) setShops(data || []);
+        } catch (err) {
+            console.error('Fetch shops error:', err);
+        } finally {
+            setLoading(false);
+        }
     }
 
-    const [form, setForm] = useState({ shop_no: '', category: 'Numeric', complex_id: '', rent_amount: '', rent_collection_day: '1' });
+    const [form, setForm] = useState({ shopNo: '', category: 'Numeric', complexId: '', rentAmount: '', rentCollectionDay: '1' });
     const [toast, setToast] = useState(null);
     const [search, setSearch] = useState('');
     const [selectedTab, setSelectedTab] = useState('All');
@@ -42,11 +49,11 @@ export default function ManageShops() {
     function openAdd() {
         setEditingShop(null);
         setForm({
-            shop_no: '',
+            shopNo: '',
             category: 'Numeric',
-            complex_id: complexes.find(c => c.name === selectedTab)?.id || '',
-            rent_amount: '',
-            rent_collection_day: '1'
+            complexId: complexes.find(c => c.name === selectedTab)?.id || '',
+            rentAmount: '',
+            rentCollectionDay: '1'
         });
         setShowModal(true);
     }
@@ -54,11 +61,11 @@ export default function ManageShops() {
     function openEdit(shop) {
         setEditingShop(shop);
         setForm({
-            shop_no: shop.shop_no,
+            shopNo: shop.shopNo,
             category: shop.category || 'Numeric',
-            complex_id: shop.complex_id || '',
-            rent_amount: shop.rent_amount.toString(),
-            rent_collection_day: (shop.rent_collection_day || 1).toString()
+            complexId: shop.complexId || '',
+            rentAmount: shop.rentAmount.toString(),
+            rentCollectionDay: (shop.rentCollectionDay || 1).toString()
         });
         setShowModal(true);
     }
@@ -66,89 +73,126 @@ export default function ManageShops() {
     async function handleSave(e) {
         e.preventDefault();
 
-        if (!form.complex_id) {
+        if (!form.complexId) {
             setToast({ message: 'Please select a complex', type: 'error' });
             return;
         }
 
         const payload = {
-            shop_no: form.shop_no.trim(),
+            shopNo: form.shopNo.trim(),
             category: form.category,
-            complex_id: form.complex_id,
-            rent_amount: parseFloat(form.rent_amount),
-            rent_collection_day: parseInt(form.rent_collection_day),
+            complexId: parseInt(form.complexId),
+            rentAmount: form.rentAmount.toString(),
+            rentCollectionDay: parseInt(form.rentCollectionDay),
         };
 
-        if (editingShop) {
-            const { error } = await supabase.from('shops').update(payload).eq('id', editingShop.id);
-            if (error) { setToast({ message: error.message, type: 'error' }); return; }
-            setToast({ message: 'Shop updated', type: 'success' });
-        } else {
-            const { error } = await supabase.from('shops').insert(payload);
-            if (error) { setToast({ message: error.message, type: 'error' }); return; }
-            setToast({ message: 'Shop added', type: 'success' });
+        try {
+            if (editingShop) {
+                const res = await fetch('/api/db/shops', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: editingShop.id, ...payload }),
+                });
+                if (!res.ok) throw new Error('Update failed');
+                setToast({ message: 'Shop updated', type: 'success' });
+            } else {
+                const res = await fetch('/api/db/shops', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) throw new Error('Create failed');
+                setToast({ message: 'Shop added', type: 'success' });
+            }
+            setShowModal(false);
+            fetchShops();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
         }
-
-        setShowModal(false);
-        fetchShops();
     }
 
     async function handleSaveComplex(e) {
         e.preventDefault();
         const payload = { name: complexForm.name.trim() };
 
-        if (editingComplex) {
-            const { error } = await supabase.from('complexes').update(payload).eq('id', editingComplex.id);
-            if (error) { setToast({ message: error.message, type: 'error' }); return; }
-            setToast({ message: 'Complex updated', type: 'success' });
-        } else {
-            const { error } = await supabase.from('complexes').insert(payload);
-            if (error) { setToast({ message: error.message, type: 'error' }); return; }
-            setToast({ message: 'Complex added', type: 'success' });
+        try {
+            if (editingComplex) {
+                const res = await fetch('/api/db/complexes', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: editingComplex.id, ...payload }),
+                });
+                if (!res.ok) throw new Error('Update failed');
+                setToast({ message: 'Complex updated', type: 'success' });
+            } else {
+                const res = await fetch('/api/db/complexes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) throw new Error('Create failed');
+                setToast({ message: 'Complex added', type: 'success' });
+            }
+            setShowComplexModal(false);
+            fetchComplexes();
+            fetchShops();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
         }
-
-        setShowComplexModal(false);
-        fetchComplexes();
-        fetchShops();
     }
 
     async function deleteComplex(id) {
-        // Check if shops exist
-        const { data: linkedShops } = await supabase.from('shops').select('id').eq('complex_id', id);
-        if (linkedShops && linkedShops.length > 0) {
+        const compShops = shops.filter(s => s.complexId === id);
+        if (compShops.length > 0) {
             alert('Cannot delete complex: It contains shops. Please move or delete shops first.');
             return;
         }
         if (!confirm('Delete this complex?')) return;
-        const { error } = await supabase.from('complexes').delete().eq('id', id);
-        if (error) { setToast({ message: error.message, type: 'error' }); return; }
-        setToast({ message: 'Complex deleted', type: 'success' });
-        fetchComplexes();
+        try {
+            const res = await fetch(`/api/db/complexes?id=${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Delete failed');
+            setToast({ message: 'Complex deleted', type: 'success' });
+            fetchComplexes();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
+        }
     }
 
     async function toggleActive(shop) {
-        await supabase.from('shops').update({ is_active: !shop.is_active }).eq('id', shop.id);
-        fetchShops();
+        try {
+            await fetch('/api/db/shops', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: shop.id, isActive: !shop.isActive }),
+            });
+            fetchShops();
+        } catch (err) {
+            console.error('Toggle active error:', err);
+        }
     }
 
     async function handleDelete(id) {
-        // Check if assigned first
-        const { data: assignments } = await supabase.from('renter_shops').select('id').eq('shop_id', id);
+        const shop = shops.find(s => s.id === id);
+        const assignmentsCount = shop?.renterShops?.length || 0;
 
-        const msg = (assignments && assignments.length > 0)
+        const msg = (assignmentsCount > 0)
             ? `WARNING: This shop is currently assigned to a renter. Deleting it will remove the assignment. Proceed?`
             : 'Delete this shop?';
 
         if (!confirm(msg)) return;
 
-        const { error } = await supabase.from('shops').delete().eq('id', id);
-        if (error) { setToast({ message: error.message, type: 'error' }); return; }
-        setToast({ message: 'Shop deleted', type: 'success' });
-        fetchShops();
+        try {
+            const res = await fetch(`/api/db/shops?id=${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Delete failed');
+            setToast({ message: 'Shop deleted', type: 'success' });
+            fetchShops();
+        } catch (err) {
+            setToast({ message: err.message, type: 'error' });
+        }
     }
 
     const filtered = shops.filter(s => {
-        const matchesSearch = s.shop_no.toLowerCase().includes(search.toLowerCase());
+        const matchesSearch = s.shopNo.toLowerCase().includes(search.toLowerCase());
         const matchesTab = selectedTab === 'All' || s.complexes?.name === selectedTab;
         return matchesSearch && matchesTab;
     });
@@ -199,7 +243,7 @@ export default function ManageShops() {
                     All ({shops.length})
                 </button>
                 {complexes.map(comp => {
-                    const count = shops.filter(s => s.complex_id === comp.id).length;
+                    const count = shops.filter(s => s.complexId === comp.id).length;
                     return (
                         <button
                             key={comp.id}
@@ -236,7 +280,7 @@ export default function ManageShops() {
                         // Grouped View for "All"
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                             {complexes.map(comp => {
-                                const compShops = shops.filter(s => s.complex_id === comp.id);
+                                const compShops = shops.filter(s => s.complexId === comp.id);
                                 if (compShops.length === 0) return null;
                                 return (
                                     <div key={comp.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -258,28 +302,28 @@ export default function ManageShops() {
                                             <tbody>
                                                 {compShops.map(shop => (
                                                     <tr key={shop.id}>
-                                                        <td style={{ fontWeight: 600 }}>{shop.shop_no}</td>
+                                                        <td style={{ fontWeight: 600 }}>{shop.shopNo}</td>
                                                         <td>
                                                             <span className="shop-tag" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
                                                                 {shop.category || 'Numeric'}
                                                             </span>
                                                         </td>
                                                         <td style={{ color: 'var(--text-secondary)' }}>
-                                                            {shop.renter_shops && shop.renter_shops.length > 0
-                                                                ? shop.renter_shops[0].renters?.name
+                                                            {shop.renterShops && shop.renterShops.length > 0
+                                                                ? shop.renterShops[0].renters?.name
                                                                 : <span style={{ opacity: 0.5 }}>Unassigned</span>}
                                                         </td>
-                                                        <td>₹{Number(shop.rent_amount).toLocaleString()}</td>
+                                                        <td>₹{Number(shop.rentAmount).toLocaleString()}</td>
                                                         <td>
-                                                            <span className={`badge ${shop.is_active ? 'badge-paid' : 'badge-unpaid'}`}>
-                                                                {shop.is_active ? 'Active' : 'Inactive'}
+                                                            <span className={`badge ${shop.isActive ? 'badge-paid' : 'badge-unpaid'}`}>
+                                                                {shop.isActive ? 'Active' : 'Inactive'}
                                                             </span>
                                                         </td>
                                                         <td style={{ textAlign: 'right' }}>
                                                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                                                 <button className="btn btn-secondary btn-sm" onClick={() => openEdit(shop)}>✏️</button>
                                                                 <button className="btn btn-secondary btn-sm" onClick={() => toggleActive(shop)}>
-                                                                    {shop.is_active ? '🔴' : '🟢'}
+                                                                    {shop.isActive ? '🔴' : '🟢'}
                                                                 </button>
                                                                 <button className="btn btn-danger btn-sm" onClick={() => handleDelete(shop.id)}>🗑️</button>
                                                             </div>
@@ -310,7 +354,7 @@ export default function ManageShops() {
                                 <tbody>
                                     {filtered.map((shop) => (
                                         <tr key={shop.id}>
-                                            <td style={{ fontWeight: 600 }}>{shop.shop_no}</td>
+                                            <td style={{ fontWeight: 600 }}>{shop.shopNo}</td>
                                             {selectedTab === 'All' && <td style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{shop.complexes?.name || '—'}</td>}
                                             <td>
                                                 <span className="shop-tag" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
@@ -318,21 +362,21 @@ export default function ManageShops() {
                                                 </span>
                                             </td>
                                             <td style={{ color: 'var(--text-secondary)' }}>
-                                                {shop.renter_shops && shop.renter_shops.length > 0
-                                                    ? shop.renter_shops[0].renters?.name
+                                                {shop.renterShops && shop.renterShops.length > 0
+                                                    ? shop.renterShops[0].renters?.name
                                                     : <span style={{ opacity: 0.5 }}>Unassigned</span>}
                                             </td>
-                                            <td>₹{Number(shop.rent_amount).toLocaleString()}</td>
+                                            <td>₹{Number(shop.rentAmount).toLocaleString()}</td>
                                             <td>
-                                                <span className={`badge ${shop.is_active ? 'badge-paid' : 'badge-unpaid'}`}>
-                                                    {shop.is_active ? 'Active' : 'Inactive'}
+                                                <span className={`badge ${shop.isActive ? 'badge-paid' : 'badge-unpaid'}`}>
+                                                    {shop.isActive ? 'Active' : 'Inactive'}
                                                 </span>
                                             </td>
                                             <td style={{ textAlign: 'right' }}>
                                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                                                     <button className="btn btn-secondary btn-sm" onClick={() => openEdit(shop)}>✏️</button>
                                                     <button className="btn btn-secondary btn-sm" onClick={() => toggleActive(shop)}>
-                                                        {shop.is_active ? '🔴' : '🟢'}
+                                                        {shop.isActive ? '🔴' : '🟢'}
                                                     </button>
                                                     <button className="btn btn-danger btn-sm" onClick={() => handleDelete(shop.id)}>🗑️</button>
                                                 </div>
@@ -359,8 +403,8 @@ export default function ManageShops() {
                                 <label className="form-label">Complex</label>
                                 <select
                                     className="form-select"
-                                    value={form.complex_id}
-                                    onChange={(e) => setForm({ ...form, complex_id: e.target.value })}
+                                    value={form.complexId}
+                                    onChange={(e) => setForm({ ...form, complexId: e.target.value })}
                                     required
                                 >
                                     <option value="">-- Select Complex --</option>
@@ -403,8 +447,8 @@ export default function ManageShops() {
                                 <input
                                     className="form-input"
                                     placeholder="e.g. B-01, G-01, or 01"
-                                    value={form.shop_no}
-                                    onChange={(e) => setForm({ ...form, shop_no: e.target.value })}
+                                    value={form.shopNo}
+                                    onChange={(e) => setForm({ ...form, shopNo: e.target.value })}
                                     required
                                 />
                             </div>
@@ -415,8 +459,8 @@ export default function ManageShops() {
                                     type="number"
                                     step="0.01"
                                     placeholder="e.g. 5000"
-                                    value={form.rent_amount}
-                                    onChange={(e) => setForm({ ...form, rent_amount: e.target.value })}
+                                    value={form.rentAmount}
+                                    onChange={(e) => setForm({ ...form, rentAmount: e.target.value })}
                                     required
                                 />
                             </div>
@@ -428,8 +472,8 @@ export default function ManageShops() {
                                     min="1"
                                     max="31"
                                     placeholder="e.g. 1"
-                                    value={form.rent_collection_day}
-                                    onChange={(e) => setForm({ ...form, rent_collection_day: e.target.value })}
+                                    value={form.rentCollectionDay}
+                                    onChange={(e) => setForm({ ...form, rentCollectionDay: e.target.value })}
                                     required
                                 />
                             </div>
@@ -485,7 +529,7 @@ export default function ManageShops() {
                                 </thead>
                                 <tbody>
                                     {complexes.map(c => {
-                                        const count = shops.filter(s => s.complex_id === c.id).length;
+                                        const count = shops.filter(s => s.complexId === c.id).length;
                                         return (
                                             <tr key={c.id}>
                                                 <td style={{ fontWeight: 600 }}>{c.name}</td>
