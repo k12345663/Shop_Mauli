@@ -61,10 +61,8 @@ export async function GET(req) {
 
             // Calculate total expected from active shops
             const expectedTotal = renter.renterShops.reduce((sum, rs) => {
-                if (rs.shops?.isActive) {
-                    return sum + Number(rs.shops.rentAmount || 0);
-                }
-                return sum;
+                const rentAmt = Number(rs.shops?.rentAmount || 0);
+                return sum + rentAmt;
             }, 0);
 
             // Calculate deposit totals
